@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/"
+title = "Agency Proposals AI"
+version = "1.0.0"
+id = "artifacts/agency-proposals-ai"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 19365
+
+[services.development]
+run = "pnpm --filter @workspace/agency-proposals-ai run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/agency-proposals-ai", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/agency-proposals-ai/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19365"
+BASE_PATH = "/"
