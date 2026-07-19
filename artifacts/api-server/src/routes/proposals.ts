@@ -61,17 +61,43 @@ router.post("/proposals/public/:token/respond", async (req, res) => {
     return;
   }
   try {
+    // Load proposal to check state and expiry before updating
+    const [proposal] = await db
+      .select({ status: proposalsTable.status, expiresAt: proposalsTable.expiresAt })
+      .from(proposalsTable)
+      .where(eq(proposalsTable.publicToken, req.params.token))
+      .limit(1);
+
+    if (!proposal) {
+      res.status(404).json({ error: "Propuesta no encontrada" });
+      return;
+    }
+
+    // Once accepted or rejected, the decision is locked
+    if (proposal.status === "accepted" || proposal.status === "rejected") {
+      res.status(409).json({ error: "Esta propuesta ya fue respondida", status: proposal.status });
+      return;
+    }
+
+    // Enforce expiry
+    if (proposal.expiresAt && new Date(proposal.expiresAt) < new Date()) {
+      res.status(410).json({ error: "Esta propuesta ha vencido" });
+      return;
+    }
+
+    // Proposal must be in "sent" state to accept/reject
+    if (proposal.status !== "sent") {
+      res.status(400).json({ error: "La propuesta no está disponible para respuesta" });
+      return;
+    }
+
     const status = action === "accept" ? "accepted" : "rejected";
     const [updated] = await db
       .update(proposalsTable)
       .set({ status })
       .where(eq(proposalsTable.publicToken, req.params.token))
       .returning();
-    if (!updated) {
-      res.status(404).json({ error: "Propuesta no encontrada" });
-      return;
-    }
-    res.json({ ok: true, status });
+    res.json({ ok: true, status: updated.status });
   } catch (err) {
     res.status(500).json({ error: "Internal server error" });
   }
@@ -203,23 +229,30 @@ router.post("/proposals", async (req: AuthRequest, res) => {
 router.put("/proposals/:id", async (req: AuthRequest, res) => {
   const { clientName, clientEmail, clientCompany, customMessage, discountPercentage, aiContent, proposalType, serviceTemplateId } = req.body;
   try {
+    // Load the current proposal first (also verifies ownership)
+    const [current] = await db
+      .select({ serviceTemplateId: proposalsTable.serviceTemplateId, discountPercentage: proposalsTable.discountPercentage })
+      .from(proposalsTable)
+      .where(and(eq(proposalsTable.id, req.params.id), eq(proposalsTable.userId, req.userId!)))
+      .limit(1);
+    if (!current) { res.status(404).json({ error: "Proposal not found" }); return; }
+
     // Recalculate price if discount or template changed
     let finalPrice: string | undefined;
-    const templateIdToUse = serviceTemplateId;
-    if (templateIdToUse || discountPercentage !== undefined) {
-      const [current] = await db
-        .select({ serviceTemplateId: proposalsTable.serviceTemplateId, discountPercentage: proposalsTable.discountPercentage })
-        .from(proposalsTable)
-        .where(and(eq(proposalsTable.id, req.params.id), eq(proposalsTable.userId, req.userId!)))
+    if (serviceTemplateId || discountPercentage !== undefined) {
+      // If caller wants to switch template, verify they own it
+      const tid = serviceTemplateId || current.serviceTemplateId;
+      const [template] = await db
+        .select()
+        .from(serviceTemplatesTable)
+        .where(and(eq(serviceTemplatesTable.id, tid), eq(serviceTemplatesTable.userId, req.userId!)))
         .limit(1);
-      if (current) {
-        const tid = templateIdToUse || current.serviceTemplateId;
-        const [template] = await db.select().from(serviceTemplatesTable).where(eq(serviceTemplatesTable.id, tid)).limit(1);
-        if (template) {
-          const disc = discountPercentage !== undefined ? Number(discountPercentage) : current.discountPercentage;
-          finalPrice = (Number(template.price) * (1 - disc / 100)).toFixed(2);
-        }
+      if (!template) {
+        res.status(403).json({ error: "Template not found or access denied" });
+        return;
       }
+      const disc = discountPercentage !== undefined ? Number(discountPercentage) : current.discountPercentage;
+      finalPrice = (Number(template.price) * (1 - disc / 100)).toFixed(2);
     }
 
     const updateData: Record<string, unknown> = {};
