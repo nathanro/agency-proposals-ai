@@ -36,6 +36,16 @@ export default function PublicProposalPage() {
 
   const alreadyDecided = proposal?.status === "accepted" || proposal?.status === "rejected";
 
+  // Use org branding colors
+  const primaryColor = proposal?.agencyColor || "#7c3aed";
+  const primaryRgb = (() => {
+    const c = primaryColor.replace("#", "");
+    const r = parseInt(c.slice(0, 2), 16);
+    const g = parseInt(c.slice(2, 4), 16);
+    const b = parseInt(c.slice(4, 6), 16);
+    return `${r}, ${g}, ${b}`;
+  })();
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[hsl(240,15%,6%)] flex items-center justify-center">
@@ -59,24 +69,31 @@ export default function PublicProposalPage() {
   }
 
   const agencyName = proposal.agencyName || proposal.agentName || "Agencia Digital";
+  const agencyLogo = proposal.agencyLogo;
   const hasAiContent = proposal.aiContent &&
     (proposal.aiContent.introduction || proposal.aiContent.scope || proposal.aiContent.timeline || proposal.aiContent.investment);
 
   return (
     <div className="min-h-screen bg-[hsl(240,15%,6%)] text-white">
-      {/* Background orbs */}
+      {/* Dynamic background orbs using org color */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute w-[500px] h-[500px] bg-violet-600/15 -top-40 -left-40 rounded-full blur-[100px]" />
-        <div className="absolute w-[400px] h-[400px] bg-indigo-600/10 bottom-0 right-0 rounded-full blur-[100px]" />
+        <div className="absolute w-[500px] h-[500px] -top-40 -left-40 rounded-full blur-[100px]"
+          style={{ background: `rgba(${primaryRgb}, 0.12)` }} />
+        <div className="absolute w-[400px] h-[400px] bottom-0 right-0 rounded-full blur-[100px]"
+          style={{ background: `rgba(${primaryRgb}, 0.07)` }} />
       </div>
 
       {/* Agency header */}
       <header className="relative border-b border-white/5 bg-[hsl(240,12%,8%)/80] backdrop-blur-md">
         <div className="max-w-3xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center">
-              <Building2 className="w-4 h-4 text-white" />
-            </div>
+            {agencyLogo ? (
+              <img src={agencyLogo} alt={agencyName} className="w-9 h-9 rounded-xl object-contain" />
+            ) : (
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: primaryColor }}>
+                <Building2 className="w-4 h-4 text-white" />
+              </div>
+            )}
             <div>
               <p className="font-bold text-sm">{agencyName}</p>
               <p className="text-white/30 text-xs">Propuesta de servicios</p>
@@ -91,7 +108,6 @@ export default function PublicProposalPage() {
         </div>
       </header>
 
-      {/* Main content */}
       <main className="relative max-w-3xl mx-auto px-6 py-10">
         {/* Already responded banner */}
         {(responded || alreadyDecided) && (
@@ -114,18 +130,17 @@ export default function PublicProposalPage() {
           </div>
         )}
 
-        {/* Hero greeting */}
+        {/* Hero */}
         <div className="mb-10">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-300 text-xs mb-4">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs mb-4 border"
+            style={{ background: `rgba(${primaryRgb}, 0.1)`, borderColor: `rgba(${primaryRgb}, 0.3)`, color: primaryColor }}>
             <Sparkles className="w-3.5 h-3.5" />
             {TYPE_LABELS[proposal.proposalType] ?? "Propuesta de servicios"}
           </div>
           <h1 className="text-3xl sm:text-4xl font-bold mb-3 leading-tight">
-            Propuesta para <span className="text-gradient">{proposal.clientName}</span>
+            Propuesta para <span style={{ color: primaryColor }}>{proposal.clientName}</span>
           </h1>
-          {proposal.clientCompany && (
-            <p className="text-white/50 text-lg">{proposal.clientCompany}</p>
-          )}
+          {proposal.clientCompany && <p className="text-white/50 text-lg">{proposal.clientCompany}</p>}
           <p className="text-white/40 text-sm mt-2">
             Preparada por <strong className="text-white/60">{agencyName}</strong> · {new Date(proposal.createdAt).toLocaleDateString("es-MX", { year: "numeric", month: "long", day: "numeric" })}
           </p>
@@ -141,8 +156,9 @@ export default function PublicProposalPage() {
               )}
             </div>
             {proposal.templateDurationDays && (
-              <div className="bg-violet-500/10 border border-violet-500/20 rounded-xl px-4 py-3 text-center flex-shrink-0">
-                <p className="text-2xl font-bold text-violet-400">{proposal.templateDurationDays}</p>
+              <div className="rounded-xl px-4 py-3 text-center flex-shrink-0 border"
+                style={{ background: `rgba(${primaryRgb}, 0.1)`, borderColor: `rgba(${primaryRgb}, 0.2)` }}>
+                <p className="text-2xl font-bold" style={{ color: primaryColor }}>{proposal.templateDurationDays}</p>
                 <p className="text-white/40 text-xs">días</p>
               </div>
             )}
@@ -163,7 +179,7 @@ export default function PublicProposalPage() {
               };
               return (
                 <div key={key} className="rounded-2xl bg-[hsl(240,12%,8%)] border border-white/5 p-6">
-                  <p className="text-xs text-violet-400 uppercase tracking-widest font-semibold mb-3">{labels[key]}</p>
+                  <p className="text-xs uppercase tracking-widest font-semibold mb-3" style={{ color: primaryColor }}>{labels[key]}</p>
                   <p className="text-white/75 leading-relaxed">{text}</p>
                 </div>
               );
@@ -178,8 +194,9 @@ export default function PublicProposalPage() {
             <ul className="grid sm:grid-cols-2 gap-2">
               {proposal.templateDeliverables.map((d, i) => (
                 <li key={i} className="flex items-center gap-2.5 text-sm text-white/70">
-                  <div className="w-5 h-5 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center flex-shrink-0">
-                    <Check className="w-3 h-3 text-emerald-400" />
+                  <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 border"
+                    style={{ background: `rgba(${primaryRgb}, 0.15)`, borderColor: `rgba(${primaryRgb}, 0.3)` }}>
+                    <Check className="w-3 h-3" style={{ color: primaryColor }} />
                   </div>
                   {d}
                 </li>
@@ -189,7 +206,8 @@ export default function PublicProposalPage() {
         )}
 
         {/* Pricing */}
-        <section className="mb-8 rounded-2xl bg-gradient-to-br from-violet-500/10 to-indigo-500/5 border border-violet-500/20 p-6">
+        <section className="mb-8 rounded-2xl border p-6"
+          style={{ background: `rgba(${primaryRgb}, 0.06)`, borderColor: `rgba(${primaryRgb}, 0.2)` }}>
           <h3 className="font-bold mb-4">Inversión</h3>
           <div className="space-y-3">
             <div className="flex justify-between text-sm">
@@ -204,7 +222,9 @@ export default function PublicProposalPage() {
             )}
             <div className="border-t border-white/10 pt-3 flex justify-between items-center">
               <span className="font-semibold">Total</span>
-              <span className="text-2xl font-bold text-violet-400">${Number(proposal.finalPrice).toLocaleString()} <span className="text-sm font-normal text-white/40">{proposal.currency}</span></span>
+              <span className="text-2xl font-bold" style={{ color: primaryColor }}>
+                ${Number(proposal.finalPrice).toLocaleString()} <span className="text-sm font-normal text-white/40">{proposal.currency}</span>
+              </span>
             </div>
           </div>
         </section>
@@ -217,20 +237,27 @@ export default function PublicProposalPage() {
           </section>
         )}
 
-        {/* CTA — Accept / Reject */}
+        {/* CTA */}
         {!responded && !alreadyDecided && proposal.status === "sent" && (
           <div className="rounded-2xl bg-[hsl(240,12%,8%)] border border-white/5 p-6 text-center">
             <h3 className="font-bold text-lg mb-2">¿Qué decides?</h3>
             <p className="text-white/40 text-sm mb-6">Tu respuesta quedará registrada y nos notificaremos de inmediato.</p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <button onClick={() => handleRespond("accept")} disabled={responding}
-                className="flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 font-bold text-base transition-all hover:shadow-[0_0_30px_rgba(16,185,129,0.4)]">
+              <button
+                onClick={() => handleRespond("accept")}
+                disabled={responding}
+                className="flex items-center justify-center gap-2 px-8 py-4 rounded-xl font-bold text-base transition-all text-white"
+                style={{ background: primaryColor, boxShadow: responding ? "none" : `0 0 30px rgba(${primaryRgb}, 0.4)` }}
+              >
                 {responding ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
                 Aceptar propuesta
                 <ChevronRight className="w-4 h-4" />
               </button>
-              <button onClick={() => handleRespond("reject")} disabled={responding}
-                className="flex items-center justify-center gap-2 px-6 py-4 rounded-xl border border-white/10 hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-400 disabled:opacity-50 font-medium text-base transition-all text-white/50">
+              <button
+                onClick={() => handleRespond("reject")}
+                disabled={responding}
+                className="flex items-center justify-center gap-2 px-6 py-4 rounded-xl border border-white/10 hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-400 disabled:opacity-50 font-medium text-base transition-all text-white/50"
+              >
                 <XCircle className="w-5 h-5" />
                 Declinar
               </button>
@@ -238,7 +265,6 @@ export default function PublicProposalPage() {
           </div>
         )}
 
-        {/* Footer */}
         <div className="mt-12 text-center text-white/20 text-xs">
           <p>Propuesta generada con ProposalAI · {agencyName}</p>
         </div>

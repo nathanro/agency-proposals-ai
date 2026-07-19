@@ -3,6 +3,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import { Route, Switch, Router as WouterRouter } from 'wouter';
+import { OrgProvider } from '@/contexts/OrgContext';
 import HomePage from '@/app/page';
 import LoginPage from '@/app/auth/login/page';
 import DashboardPage from '@/app/dashboard/page';
@@ -10,6 +11,8 @@ import NewProposalPage from '@/app/proposals/new/page';
 import ProposalDetailPage from '@/app/proposals/detail/page';
 import TemplatesPage from '@/app/templates/page';
 import PublicProposalPage from '@/app/p/page';
+import SettingsPage from '@/app/settings/page';
+import AdminPage from '@/app/admin/page';
 
 const queryClient = new QueryClient();
 
@@ -24,6 +27,8 @@ function Router() {
       <Route path="/proposals/:id" component={ProposalDetailPage} />
       <Route path="/templates" component={TemplatesPage} />
       <Route path="/p/:token" component={PublicProposalPage} />
+      <Route path="/settings" component={SettingsPage} />
+      <Route path="/admin" component={AdminPage} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -34,7 +39,9 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
-          <Router />
+          <OrgProvider>
+            <Router />
+          </OrgProvider>
         </WouterRouter>
         <Toaster />
       </TooltipProvider>

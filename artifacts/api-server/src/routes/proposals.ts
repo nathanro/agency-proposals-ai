@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { proposalsTable, serviceTemplatesTable, usersTable } from "@workspace/db";
+import { proposalsTable, serviceTemplatesTable, usersTable, organizationsTable } from "@workspace/db";
 import { eq, and, desc } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "../middleware/auth.js";
 import { randomBytes } from "crypto";
@@ -33,12 +33,17 @@ router.get("/proposals/public/:token", async (req, res) => {
         templateDurationDays: serviceTemplatesTable.durationDays,
         templateDeliverables: serviceTemplatesTable.deliverables,
         templateCategory: serviceTemplatesTable.category,
-        agencyName: usersTable.agencyName,
+        // Org branding (white-label)
+        agencyName: organizationsTable.name,
+        agencyLogo: organizationsTable.logoUrl,
+        agencyColor: organizationsTable.primaryColor,
+        // Fallback from user
         agentName: usersTable.name,
       })
       .from(proposalsTable)
       .leftJoin(serviceTemplatesTable, eq(proposalsTable.serviceTemplateId, serviceTemplatesTable.id))
       .leftJoin(usersTable, eq(proposalsTable.userId, usersTable.id))
+      .leftJoin(organizationsTable, eq(proposalsTable.organizationId, organizationsTable.id))
       .where(eq(proposalsTable.publicToken, req.params.token as string))
       .limit(1);
 
@@ -61,31 +66,21 @@ router.post("/proposals/public/:token/respond", async (req, res) => {
     return;
   }
   try {
-    // Load proposal to check state and expiry before updating
     const [proposal] = await db
       .select({ status: proposalsTable.status, expiresAt: proposalsTable.expiresAt })
       .from(proposalsTable)
       .where(eq(proposalsTable.publicToken, req.params.token as string))
       .limit(1);
 
-    if (!proposal) {
-      res.status(404).json({ error: "Propuesta no encontrada" });
-      return;
-    }
-
-    // Once accepted or rejected, the decision is locked
+    if (!proposal) { res.status(404).json({ error: "Propuesta no encontrada" }); return; }
     if (proposal.status === "accepted" || proposal.status === "rejected") {
       res.status(409).json({ error: "Esta propuesta ya fue respondida", status: proposal.status });
       return;
     }
-
-    // Enforce expiry
     if (proposal.expiresAt && new Date(proposal.expiresAt) < new Date()) {
       res.status(410).json({ error: "Esta propuesta ha vencido" });
       return;
     }
-
-    // Proposal must be in "sent" state to accept/reject
     if (proposal.status !== "sent") {
       res.status(400).json({ error: "La propuesta no está disponible para respuesta" });
       return;
@@ -106,7 +101,7 @@ router.post("/proposals/public/:token/respond", async (req, res) => {
 // ── PROTECTED routes ───────────────────────────────────────────────────────────
 router.use(requireAuth);
 
-// GET /api/proposals
+// GET /api/proposals — org-scoped list
 router.get("/proposals", async (req: AuthRequest, res) => {
   try {
     const rows = await db
@@ -131,7 +126,7 @@ router.get("/proposals", async (req: AuthRequest, res) => {
       })
       .from(proposalsTable)
       .leftJoin(serviceTemplatesTable, eq(proposalsTable.serviceTemplateId, serviceTemplatesTable.id))
-      .where(eq(proposalsTable.userId, req.userId!))
+      .where(eq(proposalsTable.organizationId, req.organizationId!))
       .orderBy(desc(proposalsTable.createdAt));
     res.json(rows);
   } catch (err) {
@@ -140,7 +135,7 @@ router.get("/proposals", async (req: AuthRequest, res) => {
   }
 });
 
-// GET /api/proposals/:id
+// GET /api/proposals/:id — org-scoped single
 router.get("/proposals/:id", async (req: AuthRequest, res) => {
   try {
     const rows = await db
@@ -170,13 +165,10 @@ router.get("/proposals/:id", async (req: AuthRequest, res) => {
       })
       .from(proposalsTable)
       .leftJoin(serviceTemplatesTable, eq(proposalsTable.serviceTemplateId, serviceTemplatesTable.id))
-      .where(and(eq(proposalsTable.id, req.params.id as string), eq(proposalsTable.userId, req.userId!)))
+      .where(and(eq(proposalsTable.id, req.params.id as string), eq(proposalsTable.organizationId, req.organizationId!)))
       .limit(1);
 
-    if (!rows[0]) {
-      res.status(404).json({ error: "Proposal not found" });
-      return;
-    }
+    if (!rows[0]) { res.status(404).json({ error: "Proposal not found" }); return; }
     res.json(rows[0]);
   } catch (err) {
     console.error(err);
@@ -192,19 +184,21 @@ router.post("/proposals", async (req: AuthRequest, res) => {
     return;
   }
   try {
+    // Template must belong to same org
     const [template] = await db
       .select()
       .from(serviceTemplatesTable)
-      .where(and(eq(serviceTemplatesTable.id, serviceTemplateId), eq(serviceTemplatesTable.userId, req.userId!)))
+      .where(and(eq(serviceTemplatesTable.id, serviceTemplateId), eq(serviceTemplatesTable.organizationId, req.organizationId!)))
       .limit(1);
     if (!template) { res.status(404).json({ error: "Template not found" }); return; }
 
     const discount = Number(discountPercentage) || 0;
     const finalPrice = (Number(template.price) * (1 - discount / 100)).toFixed(2);
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
     const [proposal] = await db.insert(proposalsTable).values({
       userId: req.userId!,
+      organizationId: req.organizationId!,
       serviceTemplateId,
       proposalType: proposalType || template.category || "project",
       clientName,
@@ -225,32 +219,26 @@ router.post("/proposals", async (req: AuthRequest, res) => {
   }
 });
 
-// PUT /api/proposals/:id — full update
+// PUT /api/proposals/:id — full update (org-scoped)
 router.put("/proposals/:id", async (req: AuthRequest, res) => {
   const { clientName, clientEmail, clientCompany, customMessage, discountPercentage, aiContent, proposalType, serviceTemplateId } = req.body;
   try {
-    // Load the current proposal first (also verifies ownership)
     const [current] = await db
       .select({ serviceTemplateId: proposalsTable.serviceTemplateId, discountPercentage: proposalsTable.discountPercentage })
       .from(proposalsTable)
-      .where(and(eq(proposalsTable.id, req.params.id as string), eq(proposalsTable.userId, req.userId!)))
+      .where(and(eq(proposalsTable.id, req.params.id as string), eq(proposalsTable.organizationId, req.organizationId!)))
       .limit(1);
     if (!current) { res.status(404).json({ error: "Proposal not found" }); return; }
 
-    // Recalculate price if discount or template changed
     let finalPrice: string | undefined;
     if (serviceTemplateId || discountPercentage !== undefined) {
-      // If caller wants to switch template, verify they own it
       const tid = serviceTemplateId || current.serviceTemplateId;
       const [template] = await db
         .select()
         .from(serviceTemplatesTable)
-        .where(and(eq(serviceTemplatesTable.id, tid), eq(serviceTemplatesTable.userId, req.userId!)))
+        .where(and(eq(serviceTemplatesTable.id, tid), eq(serviceTemplatesTable.organizationId, req.organizationId!)))
         .limit(1);
-      if (!template) {
-        res.status(403).json({ error: "Template not found or access denied" });
-        return;
-      }
+      if (!template) { res.status(403).json({ error: "Template not found or access denied" }); return; }
       const disc = discountPercentage !== undefined ? Number(discountPercentage) : current.discountPercentage;
       finalPrice = (Number(template.price) * (1 - disc / 100)).toFixed(2);
     }
@@ -269,7 +257,7 @@ router.put("/proposals/:id", async (req: AuthRequest, res) => {
     const [updated] = await db
       .update(proposalsTable)
       .set(updateData)
-      .where(and(eq(proposalsTable.id, req.params.id as string), eq(proposalsTable.userId, req.userId!)))
+      .where(and(eq(proposalsTable.id, req.params.id as string), eq(proposalsTable.organizationId, req.organizationId!)))
       .returning();
     if (!updated) { res.status(404).json({ error: "Proposal not found" }); return; }
     res.json(updated);
@@ -279,14 +267,14 @@ router.put("/proposals/:id", async (req: AuthRequest, res) => {
   }
 });
 
-// PATCH /api/proposals/:id — status only (backward compat)
+// PATCH /api/proposals/:id — status only
 router.patch("/proposals/:id", async (req: AuthRequest, res) => {
   const { status } = req.body;
   try {
     const [updated] = await db
       .update(proposalsTable)
       .set({ status })
-      .where(and(eq(proposalsTable.id, req.params.id as string), eq(proposalsTable.userId, req.userId!)))
+      .where(and(eq(proposalsTable.id, req.params.id as string), eq(proposalsTable.organizationId, req.organizationId!)))
       .returning();
     if (!updated) { res.status(404).json({ error: "Proposal not found" }); return; }
     res.json(updated);
@@ -295,14 +283,14 @@ router.patch("/proposals/:id", async (req: AuthRequest, res) => {
   }
 });
 
-// POST /api/proposals/:id/send — generate public token, set status to "sent"
+// POST /api/proposals/:id/send
 router.post("/proposals/:id/send", async (req: AuthRequest, res) => {
   try {
     const token = randomBytes(24).toString("hex");
     const [updated] = await db
       .update(proposalsTable)
       .set({ status: "sent", publicToken: token })
-      .where(and(eq(proposalsTable.id, req.params.id as string), eq(proposalsTable.userId, req.userId!)))
+      .where(and(eq(proposalsTable.id, req.params.id as string), eq(proposalsTable.organizationId, req.organizationId!)))
       .returning();
     if (!updated) { res.status(404).json({ error: "Proposal not found" }); return; }
     res.json({ ok: true, publicToken: token, proposal: updated });
@@ -317,7 +305,7 @@ router.delete("/proposals/:id", async (req: AuthRequest, res) => {
   try {
     await db
       .delete(proposalsTable)
-      .where(and(eq(proposalsTable.id, req.params.id as string), eq(proposalsTable.userId, req.userId!)));
+      .where(and(eq(proposalsTable.id, req.params.id as string), eq(proposalsTable.organizationId, req.organizationId!)));
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: "Internal server error" });

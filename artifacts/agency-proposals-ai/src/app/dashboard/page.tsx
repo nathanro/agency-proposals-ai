@@ -2,9 +2,11 @@ import { useEffect, useState } from "react";
 import { useLocation, Link } from "wouter";
 import {
   Plus, FileText, Clock, CheckCircle2, XCircle, Send, Trash2,
-  Sparkles, LogOut, LayoutTemplate, TrendingUp, DollarSign, Eye, Edit2
+  Sparkles, LogOut, LayoutTemplate, TrendingUp, DollarSign, Eye, Edit2,
+  Settings, Crown
 } from "lucide-react";
 import { getMe, logout, proposalsApi, isLoggedIn, type Proposal, type AuthUser } from "@/lib/api";
+import { useOrg } from "@/contexts/OrgContext";
 
 const STATUS_LABELS: Record<string, string> = { draft: "Borrador", sent: "Enviada", accepted: "Aceptada", rejected: "Rechazada" };
 const STATUS_BADGE: Record<string, string> = { draft: "badge-draft", sent: "badge-sent", accepted: "badge-accepted", rejected: "badge-rejected" };
@@ -21,8 +23,11 @@ const TYPE_BADGE: Record<string, string> = {
 };
 const TYPE_LABELS: Record<string, string> = { recurring: "Recurrente", project: "Proyecto", consulting: "Consultoría" };
 
+const SUPERADMIN_EMAIL = "demo@proposaiai.com";
+
 export default function DashboardPage() {
   const [, setLocation] = useLocation();
+  const { org } = useOrg();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,26 +76,51 @@ export default function DashboardPage() {
     value: proposals.filter((p) => p.status === "accepted").reduce((sum, p) => sum + Number(p.finalPrice), 0),
   };
 
+  const orgName = org?.name || user?.agencyName || "ProposalAI";
+  const orgColor = org?.primaryColor || "#7c3aed";
+  const orgLogo = org?.logoUrl;
+  const isSuperAdmin = user?.email === SUPERADMIN_EMAIL;
+
   return (
     <div className="min-h-screen bg-[hsl(240,15%,6%)] text-white">
       {/* Header */}
       <header className="border-b border-white/5 bg-[hsl(240,12%,8%)]">
         <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center">
-              <Sparkles className="w-4 h-4 text-white" />
-            </div>
+            {orgLogo ? (
+              <img src={orgLogo} alt="logo" className="w-8 h-8 rounded-lg object-contain" />
+            ) : (
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: orgColor }}>
+                <Sparkles className="w-4 h-4 text-white" />
+              </div>
+            )}
             <div>
-              <span className="font-bold text-sm">ProposalAI</span>
-              {user?.agencyName && <span className="text-white/40 text-xs ml-2">· {user.agencyName}</span>}
+              <span className="font-bold text-sm">{orgName}</span>
+              {org?.plan && (
+                <span className="text-white/30 text-xs ml-2">· {org.plan}</span>
+              )}
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            {isSuperAdmin && (
+              <Link href="/admin" className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm text-amber-400/70 hover:text-amber-400 hover:bg-amber-400/10 transition-all">
+                <Crown className="w-4 h-4" />
+                <span className="hidden sm:block">Admin</span>
+              </Link>
+            )}
             <Link href="/templates" className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm text-white/60 hover:text-white hover:bg-white/5 transition-all">
               <LayoutTemplate className="w-4 h-4" />
               <span className="hidden sm:block">Templates</span>
             </Link>
-            <Link href="/proposals/new" className="flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-sm font-medium transition-all">
+            <Link href="/settings" className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-white/60 hover:text-white hover:bg-white/5 transition-all">
+              <Settings className="w-4 h-4" />
+              <span className="hidden sm:block">Mi agencia</span>
+            </Link>
+            <Link
+              href="/proposals/new"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all"
+              style={{ background: orgColor }}
+            >
               <Plus className="w-4 h-4" />
               Nueva propuesta
             </Link>
@@ -143,7 +173,7 @@ export default function DashboardPage() {
               </div>
               <h3 className="font-semibold mb-2">Sin propuestas aún</h3>
               <p className="text-white/40 text-sm mb-6">Crea tu primera propuesta con IA</p>
-              <Link href="/proposals/new" className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-sm font-medium transition-all">
+              <Link href="/proposals/new" className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium transition-all" style={{ background: orgColor }}>
                 <Plus className="w-4 h-4" /> Nueva propuesta
               </Link>
             </div>
@@ -152,7 +182,6 @@ export default function DashboardPage() {
               {proposals.map((proposal) => (
                 <div key={proposal.id} className="px-6 py-4 hover:bg-white/[0.02] transition-colors">
                   <div className="flex items-center gap-4">
-                    {/* Main info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap mb-1">
                         <p className="font-medium text-sm truncate">{proposal.clientName}</p>
@@ -168,42 +197,25 @@ export default function DashboardPage() {
                       </div>
                       <p className="text-white/40 text-xs truncate">{proposal.templateName} · {proposal.clientEmail}</p>
                     </div>
-
-                    {/* Price */}
                     <div className="text-right flex-shrink-0 hidden sm:block">
                       <p className="font-semibold text-sm">${Number(proposal.finalPrice).toLocaleString()}</p>
                       <p className="text-white/30 text-xs">{proposal.currency}</p>
                     </div>
-
-                    {/* Actions */}
                     <div className="flex items-center gap-1 flex-shrink-0">
-                      {/* View */}
-                      <Link href={`/proposals/${proposal.id}`}
-                        className="p-1.5 rounded-lg text-white/30 hover:text-violet-400 hover:bg-violet-400/10 transition-all"
-                        title="Ver propuesta">
+                      <Link href={`/proposals/${proposal.id}`} className="p-1.5 rounded-lg text-white/30 hover:text-violet-400 hover:bg-violet-400/10 transition-all" title="Ver">
                         <Eye className="w-4 h-4" />
                       </Link>
-                      {/* Edit */}
-                      <Link href={`/proposals/${proposal.id}`}
-                        className="p-1.5 rounded-lg text-white/30 hover:text-white hover:bg-white/5 transition-all"
-                        title="Editar propuesta">
+                      <Link href={`/proposals/${proposal.id}`} className="p-1.5 rounded-lg text-white/30 hover:text-white hover:bg-white/5 transition-all" title="Editar">
                         <Edit2 className="w-4 h-4" />
                       </Link>
-                      {/* Status dropdown */}
-                      <select
-                        value={proposal.status}
-                        onChange={(e) => handleStatusChange(proposal.id, e.target.value)}
-                        className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-xs text-white/70 focus:outline-none focus:border-violet-500 cursor-pointer"
-                      >
+                      <select value={proposal.status} onChange={(e) => handleStatusChange(proposal.id, e.target.value)}
+                        className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-xs text-white/70 focus:outline-none focus:border-violet-500 cursor-pointer">
                         <option value="draft">Borrador</option>
                         <option value="sent">Enviada</option>
                         <option value="accepted">Aceptada</option>
                         <option value="rejected">Rechazada</option>
                       </select>
-                      {/* Delete */}
-                      <button onClick={() => handleDelete(proposal.id)}
-                        className="p-1.5 rounded-lg text-white/20 hover:text-red-400 hover:bg-red-400/10 transition-all"
-                        title="Eliminar">
+                      <button onClick={() => handleDelete(proposal.id)} className="p-1.5 rounded-lg text-white/20 hover:text-red-400 hover:bg-red-400/10 transition-all">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>

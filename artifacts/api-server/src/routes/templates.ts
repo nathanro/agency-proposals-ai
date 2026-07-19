@@ -7,13 +7,13 @@ import { requireAuth, type AuthRequest } from "../middleware/auth.js";
 const router = Router();
 router.use(requireAuth);
 
-// GET /api/templates
+// GET /api/templates — org-scoped
 router.get("/templates", async (req: AuthRequest, res) => {
   try {
     const rows = await db
       .select()
       .from(serviceTemplatesTable)
-      .where(eq(serviceTemplatesTable.userId, req.userId!))
+      .where(eq(serviceTemplatesTable.organizationId, req.organizationId!))
       .orderBy(desc(serviceTemplatesTable.createdAt));
     res.json(rows);
   } catch (err) {
@@ -31,6 +31,7 @@ router.post("/templates", async (req: AuthRequest, res) => {
   try {
     const [tmpl] = await db.insert(serviceTemplatesTable).values({
       userId: req.userId!,
+      organizationId: req.organizationId!,
       name,
       description,
       price: String(price),
@@ -47,7 +48,7 @@ router.post("/templates", async (req: AuthRequest, res) => {
   }
 });
 
-// PATCH /api/templates/:id
+// PATCH /api/templates/:id — org-scoped update
 router.patch("/templates/:id", async (req: AuthRequest, res) => {
   const { name, description, price, currency, durationDays, deliverables, isActive, category } = req.body;
   try {
@@ -64,7 +65,7 @@ router.patch("/templates/:id", async (req: AuthRequest, res) => {
     const [updated] = await db
       .update(serviceTemplatesTable)
       .set(updates)
-      .where(and(eq(serviceTemplatesTable.id, req.params.id as string), eq(serviceTemplatesTable.userId, req.userId!)))
+      .where(and(eq(serviceTemplatesTable.id, req.params.id as string), eq(serviceTemplatesTable.organizationId, req.organizationId!)))
       .returning();
     if (!updated) { res.status(404).json({ error: "Template not found" }); return; }
     res.json(updated);
@@ -73,12 +74,12 @@ router.patch("/templates/:id", async (req: AuthRequest, res) => {
   }
 });
 
-// DELETE /api/templates/:id
+// DELETE /api/templates/:id — org-scoped
 router.delete("/templates/:id", async (req: AuthRequest, res) => {
   try {
     await db
       .delete(serviceTemplatesTable)
-      .where(and(eq(serviceTemplatesTable.id, req.params.id as string), eq(serviceTemplatesTable.userId, req.userId!)));
+      .where(and(eq(serviceTemplatesTable.id, req.params.id as string), eq(serviceTemplatesTable.organizationId, req.organizationId!)));
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: "Internal server error" });
