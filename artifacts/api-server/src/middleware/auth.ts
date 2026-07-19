@@ -7,12 +7,14 @@ export interface AuthRequest extends Request {
   userId?: string;
   organizationId?: string;
   role?: string;
+  isSuperAdmin?: boolean;
 }
 
 export interface JwtPayload {
   userId: string;
   organizationId: string;
   role: string;
+  isSuperAdmin: boolean;
 }
 
 export function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
@@ -27,12 +29,21 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
     req.userId = payload.userId;
     req.organizationId = payload.organizationId;
     req.role = payload.role;
+    req.isSuperAdmin = payload.isSuperAdmin ?? false;
     next();
   } catch {
     res.status(401).json({ error: "Invalid token" });
   }
 }
 
-export function signToken(userId: string, organizationId: string, role: string): string {
-  return jwt.sign({ userId, organizationId, role }, JWT_SECRET, { expiresIn: "7d" });
+export function requireSuperAdmin(req: AuthRequest, res: Response, next: NextFunction) {
+  if (!req.isSuperAdmin) {
+    res.status(403).json({ error: "Superadmin access required" });
+    return;
+  }
+  next();
+}
+
+export function signToken(userId: string, organizationId: string, role: string, isSuperAdmin: boolean): string {
+  return jwt.sign({ userId, organizationId, role, isSuperAdmin }, JWT_SECRET, { expiresIn: "7d" });
 }

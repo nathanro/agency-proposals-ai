@@ -1,34 +1,14 @@
-import { Router, type Response, type NextFunction } from "express";
+import { Router } from "express";
 import { db } from "@workspace/db";
-import { organizationsTable, usersTable, proposalsTable } from "@workspace/db";
+import { organizationsTable, proposalsTable } from "@workspace/db";
 import { eq, count, desc } from "drizzle-orm";
-import { requireAuth, type AuthRequest } from "../middleware/auth.js";
+import { requireAuth, requireSuperAdmin, type AuthRequest } from "../middleware/auth.js";
 
 const router = Router();
 
-const SUPERADMIN_EMAIL = process.env.SUPERADMIN_EMAIL || "demo@proposaiai.com";
-
-// Middleware: verify superadmin by looking up the user's email
-async function requireSuperAdmin(req: AuthRequest, res: Response, next: NextFunction) {
-  if (!req.userId) { res.status(401).json({ error: "Unauthorized" }); return; }
-  try {
-    const [user] = await db
-      .select({ email: usersTable.email })
-      .from(usersTable)
-      .where(eq(usersTable.id, req.userId))
-      .limit(1);
-    if (!user || user.email !== SUPERADMIN_EMAIL) {
-      res.status(403).json({ error: "Superadmin access required" });
-      return;
-    }
-    next();
-  } catch {
-    res.status(500).json({ error: "Internal server error" });
-  }
-}
-
+// Both middlewares applied: auth first, then superadmin check via JWT flag
 router.use(requireAuth);
-router.use(requireSuperAdmin as any);
+router.use(requireSuperAdmin);
 
 // GET /api/admin/orgs — list all orgs with usage metrics
 router.get("/admin/orgs", async (_req: AuthRequest, res) => {
@@ -76,7 +56,6 @@ router.put("/admin/orgs/:id", async (req: AuthRequest, res) => {
 
     if (plan !== undefined) {
       updates.plan = plan;
-      // Auto-set limits when changing plan (unless overridden explicitly)
       const LIMITS: Record<string, { proposals: number; members: number }> = {
         free:    { proposals: 10,  members: 1  },
         starter: { proposals: 50,  members: 3  },

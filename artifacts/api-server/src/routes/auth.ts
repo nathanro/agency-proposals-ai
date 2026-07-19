@@ -1,8 +1,8 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { db } from "@workspace/db";
-import { usersTable, serviceTemplatesTable, organizationsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { usersTable, serviceTemplatesTable, organizationsTable, proposalsTable } from "@workspace/db";
+import { eq, isNull } from "drizzle-orm";
 import { signToken, requireAuth, type AuthRequest } from "../middleware/auth.js";
 
 const router = Router();
@@ -80,7 +80,6 @@ router.post("/auth/register", async (req, res) => {
       return;
     }
 
-    // Create org first (agency plan for new paid users, free for others)
     const orgName = (agencyName || "").trim() || `${name}'s Agency`;
     const [org] = await db.insert(organizationsTable).values({
       name: orgName,
@@ -99,14 +98,15 @@ router.post("/auth/register", async (req, res) => {
       agencyName: orgName,
       organizationId: org.id,
       role: "owner",
+      isSuperAdmin: false,
     }).returning();
 
-    // Seed 8 default templates
+    // Seed 8 default templates for this org
     await db.insert(serviceTemplatesTable).values(
       DEFAULT_TEMPLATES.map((t) => ({ ...t, userId: user.id, organizationId: org.id }))
     );
 
-    const token = signToken(user.id, org.id, user.role);
+    const token = signToken(user.id, org.id, user.role, user.isSuperAdmin);
     res.json({
       token,
       user: { id: user.id, email: user.email, name: user.name, agencyName: user.agencyName, role: user.role },
@@ -132,21 +132,10 @@ router.post("/auth/login", async (req, res) => {
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) { res.status(401).json({ error: "Invalid credentials" }); return; }
 
-    // Load org
-    let org: { id: string; name: string; primaryColor: string; logoUrl: string | null; plan: string } | null = null;
-    if (user.organizationId) {
-      const [o] = await db.select({
-        id: organizationsTable.id,
-        name: organizationsTable.name,
-        primaryColor: organizationsTable.primaryColor,
-        logoUrl: organizationsTable.logoUrl,
-        plan: organizationsTable.plan,
-      }).from(organizationsTable).where(eq(organizationsTable.id, user.organizationId)).limit(1);
-      org = o ?? null;
-    }
+    let orgId = user.organizationId;
 
-    // If user has no org yet (legacy), create one
-    if (!org) {
+    // Legacy user with no org: create one and backfill all their data
+    if (!orgId) {
       const orgName = user.agencyName || `${user.name}'s Agency`;
       const [newOrg] = await db.insert(organizationsTable).values({
         name: orgName,
@@ -156,15 +145,35 @@ router.post("/auth/login", async (req, res) => {
         proposalLimit: 500,
         memberLimit: 25,
       }).returning();
-      await db.update(usersTable).set({ organizationId: newOrg.id }).where(eq(usersTable.id, user.id));
-      org = { id: newOrg.id, name: newOrg.name, primaryColor: newOrg.primaryColor, logoUrl: newOrg.logoUrl, plan: newOrg.plan };
+
+      orgId = newOrg.id;
+
+      // Link user to org
+      await db.update(usersTable).set({ organizationId: orgId }).where(eq(usersTable.id, user.id));
+
+      // Backfill all existing proposals and templates that have no org yet
+      await db.update(proposalsTable)
+        .set({ organizationId: orgId })
+        .where(isNull(proposalsTable.organizationId));
+      await db.update(serviceTemplatesTable)
+        .set({ organizationId: orgId })
+        .where(isNull(serviceTemplatesTable.organizationId));
     }
 
-    const token = signToken(user.id, org.id, user.role ?? "owner");
+    // Load the org
+    const [org] = await db.select({
+      id: organizationsTable.id,
+      name: organizationsTable.name,
+      primaryColor: organizationsTable.primaryColor,
+      logoUrl: organizationsTable.logoUrl,
+      plan: organizationsTable.plan,
+    }).from(organizationsTable).where(eq(organizationsTable.id, orgId)).limit(1);
+
+    const token = signToken(user.id, orgId, user.role ?? "owner", user.isSuperAdmin ?? false);
     res.json({
       token,
-      user: { id: user.id, email: user.email, name: user.name, agencyName: user.agencyName ?? org.name, role: user.role },
-      org,
+      user: { id: user.id, email: user.email, name: user.name, agencyName: user.agencyName ?? org?.name, role: user.role, isSuperAdmin: user.isSuperAdmin },
+      org: org ?? null,
     });
   } catch (err) {
     console.error(err);
@@ -196,6 +205,7 @@ router.get("/auth/me", requireAuth, async (req: AuthRequest, res) => {
       name: user.name,
       agencyName: user.agencyName ?? orgData?.name,
       role: user.role,
+      isSuperAdmin: user.isSuperAdmin,
       org: orgData,
     });
   } catch (err) {
