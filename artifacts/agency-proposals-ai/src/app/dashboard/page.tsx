@@ -23,8 +23,6 @@ const TYPE_BADGE: Record<string, string> = {
 };
 const TYPE_LABELS: Record<string, string> = { recurring: "Recurrente", project: "Proyecto", consulting: "Consultoría" };
 
-const SUPERADMIN_EMAIL = "demo@proposaiai.com";
-
 export default function DashboardPage() {
   const [, setLocation] = useLocation();
   const { org } = useOrg();
@@ -79,7 +77,8 @@ export default function DashboardPage() {
   const orgName = org?.name || user?.agencyName || "ProposalAI";
   const orgColor = org?.primaryColor || "#7c3aed";
   const orgLogo = org?.logoUrl;
-  const isSuperAdmin = user?.email === SUPERADMIN_EMAIL;
+  // Use server-derived isSuperAdmin flag from /auth/me — consistent with backend DB flag
+  const isSuperAdmin = user?.isSuperAdmin === true;
 
   return (
     <div className="min-h-screen bg-[hsl(240,15%,6%)] text-white">

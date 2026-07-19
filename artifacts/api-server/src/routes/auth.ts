@@ -2,7 +2,7 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { db } from "@workspace/db";
 import { usersTable, serviceTemplatesTable, organizationsTable, proposalsTable } from "@workspace/db";
-import { eq, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { signToken, requireAuth, type AuthRequest } from "../middleware/auth.js";
 
 const router = Router();
@@ -151,13 +151,14 @@ router.post("/auth/login", async (req, res) => {
       // Link user to org
       await db.update(usersTable).set({ organizationId: orgId }).where(eq(usersTable.id, user.id));
 
-      // Backfill all existing proposals and templates that have no org yet
+      // Backfill only THIS user's proposals and templates that have no org yet
+      // IMPORTANT: must scope to user.id to avoid touching other tenants' orphaned rows
       await db.update(proposalsTable)
         .set({ organizationId: orgId })
-        .where(isNull(proposalsTable.organizationId));
+        .where(eq(proposalsTable.userId, user.id));
       await db.update(serviceTemplatesTable)
         .set({ organizationId: orgId })
-        .where(isNull(serviceTemplatesTable.organizationId));
+        .where(eq(serviceTemplatesTable.userId, user.id));
     }
 
     // Load the org

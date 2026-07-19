@@ -42,6 +42,7 @@ export interface AuthUser {
   name: string;
   agencyName?: string | null;
   role?: string;
+  isSuperAdmin?: boolean;
   org?: OrgBranding | null;
 }
 
