@@ -1,249 +1,188 @@
-import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
-import { useLocation, Link } from 'wouter';
-import {
-  FileText,
-  CheckCircle,
-  Clock,
-  DollarSign,
-  Plus,
-  LogOut,
-  BarChart3,
-  Users,
-  TrendingUp
-} from 'lucide-react';
+import { useEffect, useState } from "react";
+import { useLocation, Link } from "wouter";
+import { Plus, FileText, Clock, CheckCircle2, XCircle, Send, Trash2, Sparkles, LogOut, LayoutTemplate, TrendingUp, DollarSign } from "lucide-react";
+import { getMe, logout, proposalsApi, isLoggedIn, type Proposal, type AuthUser } from "@/lib/api";
 
-interface DashboardStats {
-  totalProposals: number;
-  activeProjects: number;
-  pendingTasks: number;
-  totalRevenue: number;
-}
+const STATUS_LABELS: Record<string, string> = { draft: "Borrador", sent: "Enviada", accepted: "Aceptada", rejected: "Rechazada" };
+const STATUS_BADGE: Record<string, string> = { draft: "badge-draft", sent: "badge-sent", accepted: "badge-accepted", rejected: "badge-rejected" };
+const STATUS_ICON: Record<string, React.ReactNode> = {
+  draft: <Clock className="w-3 h-3" />,
+  sent: <Send className="w-3 h-3" />,
+  accepted: <CheckCircle2 className="w-3 h-3" />,
+  rejected: <XCircle className="w-3 h-3" />,
+};
 
 export default function DashboardPage() {
   const [, setLocation] = useLocation();
-  const [stats, setStats] = useState<DashboardStats>({
-    totalProposals: 0,
-    activeProjects: 0,
-    pendingTasks: 0,
-    totalRevenue: 0,
-  });
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [proposals, setProposals] = useState<Proposal[]>([]);
   const [loading, setLoading] = useState(true);
-  const [userName, setUserName] = useState('');
 
   useEffect(() => {
-    checkAuth();
-    loadDashboardData();
+    if (!isLoggedIn()) { setLocation("/auth/login"); return; }
+    (async () => {
+      const [me, list] = await Promise.all([getMe(), proposalsApi.list()]);
+      if (!me) { setLocation("/auth/login"); return; }
+      setUser(me);
+      setProposals(list);
+      setLoading(false);
+    })();
   }, []);
 
-  const checkAuth = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      setLocation('/auth/login');
-    } else {
-      setUserName(session.user.email || '');
-    }
-  };
+  const handleLogout = () => { logout(); setLocation("/"); };
 
-  const loadDashboardData = async () => {
+  const handleStatusChange = async (id: string, status: string) => {
     try {
-      const { data: proposals } = await supabase
-        .from('proposals')
-        .select('final_price, status');
-
-      const { data: projects } = await supabase
-        .from('projects')
-        .select('status');
-
-      const { data: tasks } = await supabase
-        .from('tasks')
-        .select('status');
-
-      if (proposals) {
-        const totalRevenue = proposals
-          .filter(p => p.status === 'paid')
-          .reduce((sum, p) => sum + (p.final_price || 0), 0);
-
-        setStats(prev => ({
-          ...prev,
-          totalProposals: proposals.length,
-          totalRevenue,
-        }));
-      }
-
-      if (projects) {
-        const activeProjects = projects.filter(p => p.status === 'in_progress').length;
-        setStats(prev => ({ ...prev, activeProjects }));
-      }
-
-      if (tasks) {
-        const pendingTasks = tasks.filter(t => t.status === 'pending').length;
-        setStats(prev => ({ ...prev, pendingTasks }));
-      }
-    } catch (error) {
-      console.error('Error loading dashboard data:', error);
-    } finally {
-      setLoading(false);
-    }
+      const updated = await proposalsApi.updateStatus(id, status);
+      setProposals((prev) => prev.map((p) => (p.id === id ? { ...p, status: updated.status } : p)));
+    } catch {}
   };
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setLocation('/auth/login');
+  const handleDelete = async (id: string) => {
+    if (!confirm("¿Eliminar esta propuesta?")) return;
+    await proposalsApi.delete(id);
+    setProposals((prev) => prev.filter((p) => p.id !== id));
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600 dark:text-gray-400">Cargando dashboard...</p>
+      <div className="min-h-screen bg-[hsl(240,15%,6%)] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+          <p className="text-white/40 text-sm">Cargando...</p>
         </div>
       </div>
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Header */}
-      <header className="bg-white dark:bg-gray-800 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
-              Agency Proposals AI
-            </h1>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Bienvenido, {userName}
-            </p>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 px-4 py-2 text-gray-700 dark:text-gray-300 hover:text-red-600 dark:hover:text-red-400"
-          >
-            <LogOut className="w-4 h-4" />
-            Cerrar Sesión
-          </button>
-        </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <StatCard
-            icon={<FileText className="w-6 h-6" />}
-            title="Propuestas"
-            value={stats.totalProposals}
-            color="blue"
-          />
-          <StatCard
-            icon={<CheckCircle className="w-6 h-6" />}
-            title="Proyectos Activos"
-            value={stats.activeProjects}
-            color="green"
-          />
-          <StatCard
-            icon={<Clock className="w-6 h-6" />}
-            title="Tareas Pendientes"
-            value={stats.pendingTasks}
-            color="yellow"
-          />
-          <StatCard
-            icon={<DollarSign className="w-6 h-6" />}
-            title="Ingresos Totales"
-            value={`$${stats.totalRevenue.toLocaleString()}`}
-            color="purple"
-          />
-        </div>
-
-        {/* Quick Actions */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 mb-8">
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
-            Acciones Rápidas
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <QuickActionButton
-              icon={<Plus className="w-5 h-5" />}
-              title="Nueva Propuesta"
-              description="Crear propuesta para cliente"
-              href="/proposals/new"
-            />
-            <QuickActionButton
-              icon={<Users className="w-5 h-5" />}
-              title="Service Templates"
-              description="Gestionar templates de servicios"
-              href="/templates"
-            />
-            <QuickActionButton
-              icon={<BarChart3 className="w-5 h-5" />}
-              title="Ver Proyectos"
-              description="Gestionar proyectos activos"
-              href="/projects"
-            />
-          </div>
-        </div>
-
-        {/* Recent Activity */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
-            Actividad Reciente
-          </h2>
-          <div className="space-y-4">
-            <ActivityItem
-              icon={<TrendingUp className="w-5 h-5 text-green-500" />}
-              title="Sistema inicializado"
-              description="Comienza creando tu primer service template"
-              time="Ahora"
-            />
-          </div>
-        </div>
-      </main>
-    </div>
-  );
-}
-
-function StatCard({ icon, title, value, color }: { icon: React.ReactNode, title: string, value: string | number, color: string }) {
-  const colorClasses: Record<string, string> = {
-    blue: 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400',
-    green: 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400',
-    yellow: 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400',
-    purple: 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
+  const totals = {
+    all: proposals.length,
+    draft: proposals.filter((p) => p.status === "draft").length,
+    sent: proposals.filter((p) => p.status === "sent").length,
+    accepted: proposals.filter((p) => p.status === "accepted").length,
+    value: proposals
+      .filter((p) => p.status === "accepted")
+      .reduce((sum, p) => sum + Number(p.finalPrice), 0),
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
-      <div className={`${colorClasses[color]} w-12 h-12 rounded-lg flex items-center justify-center mb-4`}>
-        {icon}
-      </div>
-      <h3 className="text-gray-600 dark:text-gray-400 text-sm font-medium mb-1">{title}</h3>
-      <p className="text-2xl font-bold text-gray-900 dark:text-white">{value}</p>
-    </div>
-  );
-}
+    <div className="min-h-screen bg-[hsl(240,15%,6%)] text-white">
+      {/* Sidebar / nav */}
+      <header className="border-b border-white/5 bg-[hsl(240,12%,8%)]">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center">
+              <Sparkles className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <span className="font-bold text-sm">ProposalAI</span>
+              {user?.agencyName && <span className="text-white/40 text-xs ml-2">· {user.agencyName}</span>}
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <Link href="/templates" className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm text-white/60 hover:text-white hover:bg-white/5 transition-all">
+              <LayoutTemplate className="w-4 h-4" />
+              <span className="hidden sm:block">Templates</span>
+            </Link>
+            <Link href="/proposals/new" className="flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-sm font-medium transition-all">
+              <Plus className="w-4 h-4" />
+              Nueva propuesta
+            </Link>
+            <button onClick={handleLogout} className="p-2 rounded-lg text-white/40 hover:text-white hover:bg-white/5 transition-all">
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </header>
 
-function QuickActionButton({ icon, title, description, href }: { icon: React.ReactNode, title: string, description: string, href: string }) {
-  return (
-    <Link
-      href={href}
-      className="flex items-start gap-4 p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-indigo-500 dark:hover:border-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
-    >
-      <div className="text-indigo-600 dark:text-indigo-400 mt-1">{icon}</div>
-      <div>
-        <h3 className="font-semibold text-gray-900 dark:text-white">{title}</h3>
-        <p className="text-sm text-gray-600 dark:text-gray-400">{description}</p>
-      </div>
-    </Link>
-  );
-}
+      <main className="max-w-7xl mx-auto px-6 py-8">
+        {/* Welcome */}
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold">Hola, {user?.name?.split(" ")[0]} 👋</h1>
+          <p className="text-white/40 text-sm mt-1">Aquí está el resumen de tu pipeline</p>
+        </div>
 
-function ActivityItem({ icon, title, description, time }: { icon: React.ReactNode, title: string, description: string, time: string }) {
-  return (
-    <div className="flex items-start gap-4">
-      <div className="mt-1">{icon}</div>
-      <div className="flex-1">
-        <h3 className="font-semibold text-gray-900 dark:text-white">{title}</h3>
-        <p className="text-sm text-gray-600 dark:text-gray-400">{description}</p>
-        <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">{time}</p>
-      </div>
+        {/* Stats */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          {[
+            { label: "Total", value: totals.all, icon: FileText, color: "from-violet-500/10 to-violet-600/5", border: "border-violet-500/20" },
+            { label: "Enviadas", value: totals.sent, icon: Send, color: "from-blue-500/10 to-blue-600/5", border: "border-blue-500/20" },
+            { label: "Aceptadas", value: totals.accepted, icon: CheckCircle2, color: "from-emerald-500/10 to-emerald-600/5", border: "border-emerald-500/20" },
+            { label: "Valor cerrado", value: `$${totals.value.toLocaleString()}`, icon: DollarSign, color: "from-amber-500/10 to-amber-600/5", border: "border-amber-500/20" },
+          ].map(({ label, value, icon: Icon, color, border }) => (
+            <div key={label} className={`rounded-2xl p-5 bg-gradient-to-br ${color} border ${border}`}>
+              <Icon className="w-5 h-5 text-white/40 mb-3" />
+              <p className="text-2xl font-bold">{value}</p>
+              <p className="text-white/40 text-xs mt-1">{label}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Proposals table */}
+        <div className="rounded-2xl border border-white/5 overflow-hidden bg-[hsl(240,12%,8%)]">
+          <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-violet-400" />
+              <h2 className="font-semibold text-sm">Propuestas</h2>
+            </div>
+          </div>
+
+          {proposals.length === 0 ? (
+            <div className="py-20 text-center">
+              <div className="w-16 h-16 rounded-2xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center mx-auto mb-4">
+                <FileText className="w-8 h-8 text-violet-400" />
+              </div>
+              <h3 className="font-semibold mb-2">Sin propuestas aún</h3>
+              <p className="text-white/40 text-sm mb-6">Crea tu primera propuesta con IA</p>
+              <Link
+                href="/proposals/new"
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-sm font-medium transition-all"
+              >
+                <Plus className="w-4 h-4" /> Nueva propuesta
+              </Link>
+            </div>
+          ) : (
+            <div className="divide-y divide-white/5">
+              {proposals.map((proposal) => (
+                <div key={proposal.id} className="px-6 py-4 hover:bg-white/2 transition-colors flex items-center gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-3 mb-1">
+                      <p className="font-medium text-sm truncate">{proposal.clientName}</p>
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_BADGE[proposal.status] ?? "badge-draft"}`}>
+                        {STATUS_ICON[proposal.status]}
+                        {STATUS_LABELS[proposal.status] ?? proposal.status}
+                      </span>
+                    </div>
+                    <p className="text-white/40 text-xs">{proposal.templateName} · {proposal.clientEmail}</p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className="font-semibold text-sm">${Number(proposal.finalPrice).toLocaleString()}</p>
+                    <p className="text-white/30 text-xs">{proposal.currency}</p>
+                  </div>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <select
+                      value={proposal.status}
+                      onChange={(e) => handleStatusChange(proposal.id, e.target.value)}
+                      className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-xs text-white/70 focus:outline-none focus:border-violet-500 cursor-pointer"
+                    >
+                      <option value="draft">Borrador</option>
+                      <option value="sent">Enviada</option>
+                      <option value="accepted">Aceptada</option>
+                      <option value="rejected">Rechazada</option>
+                    </select>
+                    <button
+                      onClick={() => handleDelete(proposal.id)}
+                      className="p-1.5 rounded-lg text-white/20 hover:text-red-400 hover:bg-red-400/10 transition-all"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </main>
     </div>
   );
 }

@@ -1,291 +1,185 @@
-import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
-import { useLocation, Link } from 'wouter';
-import { Plus, Edit, Trash2, Zap, ArrowLeft } from 'lucide-react';
-import { grokService } from '@/lib/grok';
+import { useEffect, useState } from "react";
+import { useLocation, Link } from "wouter";
+import { ArrowLeft, Plus, Edit2, Trash2, Zap, Sparkles, Check, X } from "lucide-react";
+import { isLoggedIn, templatesApi, aiApi, type ServiceTemplate } from "@/lib/api";
 
-interface ServiceTemplate {
-  id: string;
-  name: string;
-  description: string;
-  price: number;
-  currency: string;
-  duration_days: number;
-  deliverables: string[];
-  is_active: boolean;
-}
+const CURRENCIES = ["USD", "EUR", "MXN", "COP", "ARS"];
+
+const emptyForm = { name: "", description: "", price: "", currency: "USD", durationDays: "30", deliverables: "" };
 
 export default function TemplatesPage() {
   const [, setLocation] = useLocation();
   const [templates, setTemplates] = useState<ServiceTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [editingTemplate, setEditingTemplate] = useState<ServiceTemplate | null>(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    description: '',
-    price: '',
-    currency: 'USD',
-    duration_days: '30',
-    deliverables: '',
-  });
+  const [editing, setEditing] = useState<ServiceTemplate | null>(null);
+  const [form, setForm] = useState(emptyForm);
+  const [saving, setSaving] = useState(false);
   const [generatingTasks, setGeneratingTasks] = useState(false);
+  const [generatedTasks, setGeneratedTasks] = useState<{ title: string; priority: string; estimatedHours: number }[]>([]);
+
+  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
 
   useEffect(() => {
-    checkAuth();
-    loadTemplates();
+    if (!isLoggedIn()) { setLocation("/auth/login"); return; }
+    load();
   }, []);
 
-  const checkAuth = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      setLocation('/auth/login');
+  const load = async () => {
+    const list = await templatesApi.list();
+    setTemplates(list);
+    setLoading(false);
+  };
+
+  const openCreate = () => { setEditing(null); setForm(emptyForm); setGeneratedTasks([]); setShowModal(true); };
+  const openEdit = (t: ServiceTemplate) => {
+    setEditing(t);
+    setForm({ name: t.name, description: t.description, price: t.price, currency: t.currency, durationDays: String(t.durationDays), deliverables: t.deliverables.join(", ") });
+    setGeneratedTasks([]);
+    setShowModal(true);
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const payload = {
+        name: form.name, description: form.description, price: form.price, currency: form.currency,
+        durationDays: Number(form.durationDays), deliverables: form.deliverables.split(",").map((s) => s.trim()).filter(Boolean),
+        isActive: true, userId: "",
+      };
+      if (editing) {
+        const updated = await templatesApi.update(editing.id, payload);
+        setTemplates((prev) => prev.map((t) => (t.id === editing.id ? updated : t)));
+      } else {
+        const created = await templatesApi.create(payload);
+        setTemplates((prev) => [created, ...prev]);
+      }
+      setShowModal(false);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Error al guardar");
+    } finally {
+      setSaving(false);
     }
   };
 
-  const loadTemplates = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('service_templates')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setTemplates(data || []);
-    } catch (error) {
-      console.error('Error loading templates:', error);
-    } finally {
-      setLoading(false);
-    }
+  const handleDelete = async (id: string) => {
+    if (!confirm("¿Eliminar este template?")) return;
+    await templatesApi.delete(id);
+    setTemplates((prev) => prev.filter((t) => t.id !== id));
   };
 
   const handleGenerateTasks = async () => {
-    if (!formData.name || !formData.description) return;
-
+    if (!form.name) return;
     setGeneratingTasks(true);
     try {
-      const deliverables = formData.deliverables.split(',').map(d => d.trim()).filter(d => d);
-      const tasks = await grokService.generateDeliveryTasks(
-        formData.name,
-        formData.description,
-        deliverables
-      );
-
-      alert(`✅ Se generaron ${tasks.length} tareas con IA!`);
-
-      if (editingTemplate) {
-        await supabase
-          .from('service_templates')
-          .update({ ai_generated_tasks: tasks })
-          .eq('id', editingTemplate.id);
-      }
-
-      return tasks;
-    } catch (error) {
-      console.error('Error generating tasks:', error);
-      alert('Error generando tareas con IA');
-      return [];
+      const tasks = await aiApi.generateTasks({
+        serviceName: form.name,
+        serviceDescription: form.description,
+        deliverables: form.deliverables.split(",").map((s) => s.trim()).filter(Boolean),
+      });
+      setGeneratedTasks(tasks);
+    } catch {
+      alert("Error generando tareas");
     } finally {
       setGeneratingTasks(false);
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    try {
-      const deliverables = formData.deliverables.split(',').map(d => d.trim()).filter(d => d);
-
-      if (editingTemplate) {
-        const { error } = await supabase
-          .from('service_templates')
-          .update({
-            name: formData.name,
-            description: formData.description,
-            price: parseFloat(formData.price),
-            currency: formData.currency,
-            duration_days: parseInt(formData.duration_days),
-            deliverables,
-          })
-          .eq('id', editingTemplate.id);
-
-        if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from('service_templates')
-          .insert({
-            name: formData.name,
-            description: formData.description,
-            price: parseFloat(formData.price),
-            currency: formData.currency,
-            duration_days: parseInt(formData.duration_days),
-            deliverables,
-            is_active: true,
-          });
-
-        if (error) throw error;
-      }
-
-      setShowModal(false);
-      setEditingTemplate(null);
-      setFormData({ name: '', description: '', price: '', currency: 'USD', duration_days: '30', deliverables: '' });
-      loadTemplates();
-    } catch (error) {
-      console.error('Error saving template:', error);
-      alert('Error guardando template');
-    }
+  const toggleActive = async (t: ServiceTemplate) => {
+    const updated = await templatesApi.update(t.id, { isActive: !t.isActive });
+    setTemplates((prev) => prev.map((x) => (x.id === t.id ? updated : x)));
   };
 
-  const handleEdit = (template: ServiceTemplate) => {
-    setEditingTemplate(template);
-    setFormData({
-      name: template.name,
-      description: template.description,
-      price: template.price.toString(),
-      currency: template.currency,
-      duration_days: template.duration_days.toString(),
-      deliverables: template.deliverables.join(', '),
-    });
-    setShowModal(true);
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!confirm('¿Estás seguro de eliminar este template?')) return;
-
-    try {
-      const { error } = await supabase
-        .from('service_templates')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-      loadTemplates();
-    } catch (error) {
-      console.error('Error deleting template:', error);
-      alert('Error eliminando template');
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600 dark:text-gray-400">Cargando templates...</p>
-        </div>
-      </div>
-    );
-  }
+  if (loading) return (
+    <div className="min-h-screen bg-[hsl(240,15%,6%)] flex items-center justify-center">
+      <div className="w-8 h-8 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Header */}
-      <header className="bg-white dark:bg-gray-800 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <Link href="/dashboard" className="text-gray-600 dark:text-gray-400 hover:text-indigo-600">
-              <ArrowLeft className="w-6 h-6" />
-            </Link>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-              Service Templates
-            </h1>
+    <div className="min-h-screen bg-[hsl(240,15%,6%)] text-white">
+      <header className="border-b border-white/5 bg-[hsl(240,12%,8%)] px-6 py-4 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Link href="/dashboard" className="p-2 rounded-lg text-white/40 hover:text-white hover:bg-white/5 transition-all">
+            <ArrowLeft className="w-5 h-5" />
+          </Link>
+          <div>
+            <h1 className="font-bold">Templates de servicio</h1>
+            <p className="text-white/40 text-xs">{templates.length} servicios configurados</p>
           </div>
-          <button
-            onClick={() => {
-              setEditingTemplate(null);
-              setFormData({ name: '', description: '', price: '', currency: 'USD', duration_days: '30', deliverables: '' });
-              setShowModal(true);
-            }}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-          >
-            <Plus className="w-4 h-4" />
-            Nuevo Template
-          </button>
         </div>
+        <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-sm font-medium transition-all">
+          <Plus className="w-4 h-4" /> Nuevo template
+        </button>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-5xl mx-auto px-6 py-8">
         {templates.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="bg-gray-100 dark:bg-gray-800 rounded-full w-20 h-20 flex items-center justify-center mx-auto mb-4">
-              <Zap className="w-10 h-10 text-gray-400" />
+          <div className="text-center py-20">
+            <div className="w-16 h-16 rounded-2xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center mx-auto mb-4">
+              <Zap className="w-8 h-8 text-violet-400" />
             </div>
-            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-              No hay templates aún
-            </h3>
-            <p className="text-gray-600 dark:text-gray-400 mb-4">
-              Crea tu primer template de servicio para comenzar
-            </p>
-            <button
-              onClick={() => setShowModal(true)}
-              className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-            >
-              Crear Primer Template
+            <h3 className="font-semibold mb-2">Sin templates aún</h3>
+            <p className="text-white/40 text-sm mb-6">Crea tu primer template de servicio</p>
+            <button onClick={openCreate} className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-sm font-medium transition-all">
+              <Plus className="w-4 h-4" /> Crear template
             </button>
           </div>
         ) : (
-          <div className="grid gap-6">
-            {templates.map((template) => (
-              <div key={template.id} className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
-                      {template.name}
-                    </h3>
-                    <p className="text-gray-600 dark:text-gray-400">
-                      {template.description}
-                    </p>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {templates.map((t) => (
+              <div key={t.id} className={`rounded-2xl border p-5 card-hover bg-[hsl(240,12%,8%)] ${t.isActive ? "border-white/10" : "border-white/5 opacity-60"}`}>
+                <div className="flex justify-between items-start mb-3">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-sm truncate">{t.name}</h3>
+                    <p className="text-white/40 text-xs mt-0.5 line-clamp-2">{t.description}</p>
                   </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleEdit(template)}
-                      className="p-2 text-gray-600 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400"
-                    >
-                      <Edit className="w-5 h-5" />
+                  <div className="flex items-center gap-1 ml-2 flex-shrink-0">
+                    <button onClick={() => openEdit(t)} className="p-1.5 rounded-lg text-white/30 hover:text-white hover:bg-white/5 transition-all">
+                      <Edit2 className="w-3.5 h-3.5" />
                     </button>
-                    <button
-                      onClick={() => handleDelete(template.id)}
-                      className="p-2 text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400"
-                    >
-                      <Trash2 className="w-5 h-5" />
+                    <button onClick={() => handleDelete(t.id)} className="p-1.5 rounded-lg text-white/30 hover:text-red-400 hover:bg-red-400/10 transition-all">
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-4 mb-4">
-                  <div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">Precio</p>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white">
-                      ${template.price.toLocaleString()} {template.currency}
-                    </p>
+                <div className="grid grid-cols-3 gap-2 mb-4 text-center">
+                  <div className="bg-white/3 rounded-lg py-2">
+                    <p className="font-bold text-violet-400 text-sm">${Number(t.price).toLocaleString()}</p>
+                    <p className="text-white/30 text-xs">{t.currency}</p>
                   </div>
-                  <div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">Duración</p>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white">
-                      {template.duration_days} días
-                    </p>
+                  <div className="bg-white/3 rounded-lg py-2">
+                    <p className="font-bold text-sm">{t.durationDays}</p>
+                    <p className="text-white/30 text-xs">días</p>
                   </div>
-                  <div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">Estado</p>
-                    <p className={`text-lg font-semibold ${template.is_active ? 'text-green-600' : 'text-gray-600'}`}>
-                      {template.is_active ? 'Activo' : 'Inactivo'}
-                    </p>
+                  <div className="bg-white/3 rounded-lg py-2">
+                    <p className="font-bold text-sm">{t.deliverables.length}</p>
+                    <p className="text-white/30 text-xs">items</p>
                   </div>
                 </div>
 
-                <div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Deliverables:</p>
-                  <div className="flex flex-wrap gap-2">
-                    {template.deliverables.map((deliverable, index) => (
-                      <span
-                        key={index}
-                        className="px-3 py-1 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-full text-sm"
-                      >
-                        {deliverable}
-                      </span>
+                {t.deliverables.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mb-4">
+                    {t.deliverables.slice(0, 3).map((d, i) => (
+                      <span key={i} className="px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-300 text-xs">{d}</span>
                     ))}
+                    {t.deliverables.length > 3 && (
+                      <span className="px-2 py-0.5 rounded-full bg-white/5 text-white/30 text-xs">+{t.deliverables.length - 3}</span>
+                    )}
                   </div>
-                </div>
+                )}
+
+                <button
+                  onClick={() => toggleActive(t)}
+                  className={`w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                    t.isActive ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20" : "bg-white/5 text-white/40 border border-white/10 hover:bg-white/10"
+                  }`}
+                >
+                  {t.isActive ? <><Check className="w-3 h-3" /> Activo</> : <><X className="w-3 h-3" /> Inactivo</>}
+                </button>
               </div>
             ))}
           </div>
@@ -294,129 +188,82 @@ export default function TemplatesPage() {
 
       {/* Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={(e) => { if (e.target === e.currentTarget) setShowModal(false); }}>
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-[hsl(240,12%,10%)] border border-white/10">
             <div className="p-6">
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
-                {editingTemplate ? 'Editar Template' : 'Nuevo Template'}
-              </h2>
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="font-bold">{editing ? "Editar template" : "Nuevo template"}</h2>
+                <button onClick={() => setShowModal(false)} className="p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/5 transition-all">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
 
-              <form onSubmit={handleSubmit} className="space-y-6">
+              <form onSubmit={handleSave} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Nombre del Servicio
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    required
-                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-                    placeholder="Ej: Local SEO Package"
-                  />
+                  <label className="text-xs text-white/40 mb-1.5 block">Nombre del servicio *</label>
+                  <input type="text" value={form.name} onChange={set("name")} required placeholder="Ej: Local SEO Package"
+                    className="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm placeholder-white/20 focus:outline-none focus:border-violet-500 transition-colors" />
                 </div>
-
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Descripción
-                  </label>
-                  <textarea
-                    value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    required
-                    rows={3}
-                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-                    placeholder="Describe qué incluye este servicio..."
-                  />
+                  <label className="text-xs text-white/40 mb-1.5 block">Descripción *</label>
+                  <textarea value={form.description} onChange={set("description")} required rows={2} placeholder="Qué incluye este servicio..."
+                    className="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm placeholder-white/20 focus:outline-none focus:border-violet-500 transition-colors resize-none" />
                 </div>
-
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-3 gap-3">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Precio
-                    </label>
-                    <input
-                      type="number"
-                      value={formData.price}
-                      onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                      required
-                      className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-                      placeholder="1000"
-                    />
+                    <label className="text-xs text-white/40 mb-1.5 block">Precio *</label>
+                    <input type="number" value={form.price} onChange={set("price")} required min="0" placeholder="1000"
+                      className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm placeholder-white/20 focus:outline-none focus:border-violet-500 transition-colors" />
                   </div>
-
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Moneda
-                    </label>
-                    <select
-                      value={formData.currency}
-                      onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-                    >
-                      <option value="USD">USD</option>
-                      <option value="EUR">EUR</option>
-                      <option value="MXN">MXN</option>
+                    <label className="text-xs text-white/40 mb-1.5 block">Moneda</label>
+                    <select value={form.currency} onChange={set("currency")}
+                      className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm focus:outline-none focus:border-violet-500 transition-colors">
+                      {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
                     </select>
                   </div>
-
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Duración (días)
-                    </label>
-                    <input
-                      type="number"
-                      value={formData.duration_days}
-                      onChange={(e) => setFormData({ ...formData, duration_days: e.target.value })}
-                      required
-                      className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-                      placeholder="30"
-                    />
+                    <label className="text-xs text-white/40 mb-1.5 block">Duración (días)</label>
+                    <input type="number" value={form.durationDays} onChange={set("durationDays")} min="1" placeholder="30"
+                      className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm placeholder-white/20 focus:outline-none focus:border-violet-500 transition-colors" />
                   </div>
                 </div>
-
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Deliverables (separados por coma)
-                  </label>
-                  <textarea
-                    value={formData.deliverables}
-                    onChange={(e) => setFormData({ ...formData, deliverables: e.target.value })}
-                    rows={3}
-                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-                    placeholder="Google My Business, Citas locales, Reviews, etc."
-                  />
+                  <label className="text-xs text-white/40 mb-1.5 block">Deliverables (separados por coma)</label>
+                  <textarea value={form.deliverables} onChange={set("deliverables")} rows={2} placeholder="Google My Business, Citas locales, Reseñas..."
+                    className="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm placeholder-white/20 focus:outline-none focus:border-violet-500 transition-colors resize-none" />
                 </div>
 
-                <div className="flex gap-4">
-                  <button
-                    type="button"
-                    onClick={handleGenerateTasks}
-                    disabled={generatingTasks || !formData.name || !formData.description}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <Zap className="w-4 h-4" />
-                    {generatingTasks ? 'Generando...' : 'Generar Tareas con IA'}
-                  </button>
+                {/* AI tasks preview */}
+                {generatedTasks.length > 0 && (
+                  <div className="rounded-xl bg-violet-500/5 border border-violet-500/20 p-4">
+                    <p className="text-xs text-violet-400 font-semibold mb-3 flex items-center gap-1"><Sparkles className="w-3 h-3" /> Tareas generadas por IA</p>
+                    <div className="space-y-2">
+                      {generatedTasks.slice(0, 5).map((task, i) => (
+                        <div key={i} className="flex items-start gap-2 text-xs">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 mt-0.5 ${task.priority === "high" ? "bg-red-500/20 text-red-400" : task.priority === "medium" ? "bg-amber-500/20 text-amber-400" : "bg-white/10 text-white/40"}`}>
+                            {task.priority}
+                          </span>
+                          <span className="text-white/70">{task.title}</span>
+                          <span className="ml-auto text-white/30 flex-shrink-0">{task.estimatedHours}h</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-                  <button
-                    type="submit"
-                    className="flex-1 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-                  >
-                    {editingTemplate ? 'Actualizar' : 'Crear'} Template
+                <div className="flex gap-3">
+                  <button type="button" onClick={handleGenerateTasks} disabled={generatingTasks || !form.name}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-violet-500/30 text-violet-400 hover:bg-violet-500/10 disabled:opacity-40 text-sm transition-all">
+                    {generatingTasks ? <div className="w-3.5 h-3.5 border-2 border-violet-400/30 border-t-violet-400 rounded-full animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                    Generar tareas con IA
+                  </button>
+                  <button type="submit" disabled={saving}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-sm font-semibold transition-all">
+                    {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : null}
+                    {editing ? "Guardar cambios" : "Crear template"}
                   </button>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowModal(false);
-                    setEditingTemplate(null);
-                  }}
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
-                >
-                  Cancelar
-                </button>
               </form>
             </div>
           </div>

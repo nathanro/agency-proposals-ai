@@ -1,0 +1,1 @@
+- [ProposalAI Architecture](architecture.md) — ports (API=8080), JWT auth, Replit PostgreSQL+Drizzle, OpenAI proxy for AI generation.

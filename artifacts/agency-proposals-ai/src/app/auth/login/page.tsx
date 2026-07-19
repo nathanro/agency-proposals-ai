@@ -1,125 +1,162 @@
-import { useState } from 'react';
-import { supabase } from '@/lib/supabase';
-import { useLocation, Link } from 'wouter';
+import { useState } from "react";
+import { useLocation, Link } from "wouter";
+import { Sparkles, Mail, Lock, User, Building2, ArrowRight, Eye, EyeOff } from "lucide-react";
+import { login, register } from "@/lib/api";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
   const [, setLocation] = useLocation();
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [showPass, setShowPass] = useState(false);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const [form, setForm] = useState({ email: "", password: "", name: "", agencyName: "" });
+
+  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError("");
     setLoading(true);
-    setError('');
-
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw error;
-      setLocation('/dashboard');
-    } catch (error: any) {
-      setError(error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSignUp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-
-    try {
-      const { data, error } = await supabase.auth.signUp({ email, password });
-      if (error) throw error;
-
-      if (data.user) {
-        await supabase.from('agencies').insert({
-          name: 'Mi Agencia',
-          primary_color: '#4F46E5',
-          secondary_color: '#7C3AED',
-        });
+      if (mode === "login") {
+        await login(form.email, form.password);
+      } else {
+        await register(form.email, form.password, form.name, form.agencyName || undefined);
       }
-
-      setLocation('/dashboard');
-    } catch (error: any) {
-      setError(error.message);
+      setLocation("/dashboard");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Error desconocido");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8">
+    <div className="min-h-screen bg-[hsl(240,15%,6%)] flex items-center justify-center p-4">
+      {/* Background orbs */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="orb absolute w-96 h-96 bg-violet-600/25 -top-32 -left-32" />
+        <div className="orb absolute w-80 h-80 bg-indigo-600/20 bottom-0 right-0" style={{ animationDelay: "3s" }} />
+      </div>
+
+      <div className="relative w-full max-w-md fade-in">
+        {/* Logo */}
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-indigo-600 dark:text-indigo-400 mb-2">
-            Agency Proposals AI
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            Automatiza tus propuestas y escala tu agencia
+          <Link href="/" className="inline-flex items-center gap-2 group">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center group-hover:scale-105 transition-transform">
+              <Sparkles className="w-5 h-5 text-white" />
+            </div>
+            <span className="font-bold text-xl text-white">ProposalAI</span>
+          </Link>
+          <p className="text-white/40 text-sm mt-2">
+            {mode === "login" ? "Bienvenido de vuelta" : "Crea tu cuenta gratis"}
           </p>
         </div>
 
-        {error && (
-          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 px-4 py-3 rounded-lg mb-6">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleLogin} className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Email
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-              placeholder="tu@email.com"
-            />
+        {/* Card */}
+        <div className="glass rounded-2xl p-8">
+          {/* Tabs */}
+          <div className="flex gap-1 p-1 rounded-xl bg-white/5 mb-8">
+            {(["login", "register"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => { setMode(m); setError(""); }}
+                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
+                  mode === m ? "bg-violet-600 text-white" : "text-white/50 hover:text-white"
+                }`}
+              >
+                {m === "login" ? "Iniciar sesión" : "Registrarse"}
+              </button>
+            ))}
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Contraseña
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-              placeholder="••••••••"
-            />
-          </div>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {mode === "register" && (
+              <>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+                  <input
+                    type="text"
+                    placeholder="Tu nombre"
+                    value={form.name}
+                    onChange={set("name")}
+                    required
+                    className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/30 focus:outline-none focus:border-violet-500 transition-colors"
+                  />
+                </div>
+                <div className="relative">
+                  <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+                  <input
+                    type="text"
+                    placeholder="Nombre de tu agencia (opcional)"
+                    value={form.agencyName}
+                    onChange={set("agencyName")}
+                    className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/30 focus:outline-none focus:border-violet-500 transition-colors"
+                  />
+                </div>
+              </>
+            )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
-          </button>
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+              <input
+                type="email"
+                placeholder="tu@email.com"
+                value={form.email}
+                onChange={set("email")}
+                required
+                className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/30 focus:outline-none focus:border-violet-500 transition-colors"
+              />
+            </div>
 
-          <button
-            type="button"
-            onClick={handleSignUp}
-            disabled={loading}
-            className="w-full px-4 py-3 border-2 border-indigo-600 text-indigo-600 dark:text-indigo-400 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? 'Creando cuenta...' : 'Crear Cuenta'}
-          </button>
-        </form>
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+              <input
+                type={showPass ? "text" : "password"}
+                placeholder="Contraseña"
+                value={form.password}
+                onChange={set("password")}
+                required
+                minLength={6}
+                className="w-full pl-10 pr-12 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/30 focus:outline-none focus:border-violet-500 transition-colors"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPass((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60 transition-colors"
+              >
+                {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
 
-        <div className="mt-6 text-center">
-          <Link href="/" className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline">
-            ← Volver al inicio
-          </Link>
+            {error && (
+              <div className="px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-base transition-all hover:shadow-[0_0_30px_rgba(124,58,237,0.4)]"
+            >
+              {loading ? (
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <>
+                  {mode === "login" ? "Entrar" : "Crear cuenta"}
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </form>
         </div>
+
+        <p className="text-center text-white/30 text-xs mt-6">
+          Al continuar aceptas nuestros términos de servicio.
+        </p>
       </div>
     </div>
   );
