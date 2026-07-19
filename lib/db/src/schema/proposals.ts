@@ -1,6 +1,4 @@
 import { pgTable, text, timestamp, uuid, numeric, integer, json } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod";
 import { usersTable } from "./users";
 import { serviceTemplatesTable } from "./service_templates";
 
@@ -30,10 +28,5 @@ export const proposalsTable = pgTable("proposals", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export const insertProposalSchema = createInsertSchema(proposalsTable).omit({
-  id: true,
-  createdAt: true,
-});
-
-export type InsertProposal = z.infer<typeof insertProposalSchema>;
 export type Proposal = typeof proposalsTable.$inferSelect;
+export type InsertProposal = typeof proposalsTable.$inferInsert;

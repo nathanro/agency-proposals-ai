@@ -75,7 +75,7 @@ export interface ServiceTemplate {
   currency: string;
   durationDays: number;
   deliverables: string[];
-  category: string;
+  category?: string; // "recurring" | "project" | "consulting" — optional, server defaults to "project"
   isActive: boolean;
   createdAt: string;
 }

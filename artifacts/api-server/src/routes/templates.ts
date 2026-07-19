@@ -64,7 +64,7 @@ router.patch("/templates/:id", async (req: AuthRequest, res) => {
     const [updated] = await db
       .update(serviceTemplatesTable)
       .set(updates)
-      .where(and(eq(serviceTemplatesTable.id, req.params.id), eq(serviceTemplatesTable.userId, req.userId!)))
+      .where(and(eq(serviceTemplatesTable.id, req.params.id as string), eq(serviceTemplatesTable.userId, req.userId!)))
       .returning();
     if (!updated) { res.status(404).json({ error: "Template not found" }); return; }
     res.json(updated);
@@ -78,7 +78,7 @@ router.delete("/templates/:id", async (req: AuthRequest, res) => {
   try {
     await db
       .delete(serviceTemplatesTable)
-      .where(and(eq(serviceTemplatesTable.id, req.params.id), eq(serviceTemplatesTable.userId, req.userId!)));
+      .where(and(eq(serviceTemplatesTable.id, req.params.id as string), eq(serviceTemplatesTable.userId, req.userId!)));
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: "Internal server error" });

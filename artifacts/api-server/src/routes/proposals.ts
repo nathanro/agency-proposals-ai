@@ -39,7 +39,7 @@ router.get("/proposals/public/:token", async (req, res) => {
       .from(proposalsTable)
       .leftJoin(serviceTemplatesTable, eq(proposalsTable.serviceTemplateId, serviceTemplatesTable.id))
       .leftJoin(usersTable, eq(proposalsTable.userId, usersTable.id))
-      .where(eq(proposalsTable.publicToken, req.params.token))
+      .where(eq(proposalsTable.publicToken, req.params.token as string))
       .limit(1);
 
     if (!rows[0]) {
@@ -65,7 +65,7 @@ router.post("/proposals/public/:token/respond", async (req, res) => {
     const [proposal] = await db
       .select({ status: proposalsTable.status, expiresAt: proposalsTable.expiresAt })
       .from(proposalsTable)
-      .where(eq(proposalsTable.publicToken, req.params.token))
+      .where(eq(proposalsTable.publicToken, req.params.token as string))
       .limit(1);
 
     if (!proposal) {
@@ -95,7 +95,7 @@ router.post("/proposals/public/:token/respond", async (req, res) => {
     const [updated] = await db
       .update(proposalsTable)
       .set({ status })
-      .where(eq(proposalsTable.publicToken, req.params.token))
+      .where(eq(proposalsTable.publicToken, req.params.token as string))
       .returning();
     res.json({ ok: true, status: updated.status });
   } catch (err) {
@@ -170,7 +170,7 @@ router.get("/proposals/:id", async (req: AuthRequest, res) => {
       })
       .from(proposalsTable)
       .leftJoin(serviceTemplatesTable, eq(proposalsTable.serviceTemplateId, serviceTemplatesTable.id))
-      .where(and(eq(proposalsTable.id, req.params.id), eq(proposalsTable.userId, req.userId!)))
+      .where(and(eq(proposalsTable.id, req.params.id as string), eq(proposalsTable.userId, req.userId!)))
       .limit(1);
 
     if (!rows[0]) {
@@ -233,7 +233,7 @@ router.put("/proposals/:id", async (req: AuthRequest, res) => {
     const [current] = await db
       .select({ serviceTemplateId: proposalsTable.serviceTemplateId, discountPercentage: proposalsTable.discountPercentage })
       .from(proposalsTable)
-      .where(and(eq(proposalsTable.id, req.params.id), eq(proposalsTable.userId, req.userId!)))
+      .where(and(eq(proposalsTable.id, req.params.id as string), eq(proposalsTable.userId, req.userId!)))
       .limit(1);
     if (!current) { res.status(404).json({ error: "Proposal not found" }); return; }
 
@@ -269,7 +269,7 @@ router.put("/proposals/:id", async (req: AuthRequest, res) => {
     const [updated] = await db
       .update(proposalsTable)
       .set(updateData)
-      .where(and(eq(proposalsTable.id, req.params.id), eq(proposalsTable.userId, req.userId!)))
+      .where(and(eq(proposalsTable.id, req.params.id as string), eq(proposalsTable.userId, req.userId!)))
       .returning();
     if (!updated) { res.status(404).json({ error: "Proposal not found" }); return; }
     res.json(updated);
@@ -286,7 +286,7 @@ router.patch("/proposals/:id", async (req: AuthRequest, res) => {
     const [updated] = await db
       .update(proposalsTable)
       .set({ status })
-      .where(and(eq(proposalsTable.id, req.params.id), eq(proposalsTable.userId, req.userId!)))
+      .where(and(eq(proposalsTable.id, req.params.id as string), eq(proposalsTable.userId, req.userId!)))
       .returning();
     if (!updated) { res.status(404).json({ error: "Proposal not found" }); return; }
     res.json(updated);
@@ -302,7 +302,7 @@ router.post("/proposals/:id/send", async (req: AuthRequest, res) => {
     const [updated] = await db
       .update(proposalsTable)
       .set({ status: "sent", publicToken: token })
-      .where(and(eq(proposalsTable.id, req.params.id), eq(proposalsTable.userId, req.userId!)))
+      .where(and(eq(proposalsTable.id, req.params.id as string), eq(proposalsTable.userId, req.userId!)))
       .returning();
     if (!updated) { res.status(404).json({ error: "Proposal not found" }); return; }
     res.json({ ok: true, publicToken: token, proposal: updated });
@@ -317,7 +317,7 @@ router.delete("/proposals/:id", async (req: AuthRequest, res) => {
   try {
     await db
       .delete(proposalsTable)
-      .where(and(eq(proposalsTable.id, req.params.id), eq(proposalsTable.userId, req.userId!)));
+      .where(and(eq(proposalsTable.id, req.params.id as string), eq(proposalsTable.userId, req.userId!)));
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: "Internal server error" });

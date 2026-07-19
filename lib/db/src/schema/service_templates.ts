@@ -1,6 +1,4 @@
 import { pgTable, text, timestamp, uuid, numeric, integer, boolean, json } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod";
 import { usersTable } from "./users";
 
 export const serviceTemplatesTable = pgTable("service_templates", {
@@ -17,10 +15,5 @@ export const serviceTemplatesTable = pgTable("service_templates", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export const insertServiceTemplateSchema = createInsertSchema(serviceTemplatesTable).omit({
-  id: true,
-  createdAt: true,
-});
-
-export type InsertServiceTemplate = z.infer<typeof insertServiceTemplateSchema>;
 export type ServiceTemplate = typeof serviceTemplatesTable.$inferSelect;
+export type InsertServiceTemplate = typeof serviceTemplatesTable.$inferInsert;

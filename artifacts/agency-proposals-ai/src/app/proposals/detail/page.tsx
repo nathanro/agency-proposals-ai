@@ -43,20 +43,26 @@ export default function ProposalDetailPage() {
   useEffect(() => {
     if (!isLoggedIn()) { setLocation("/auth/login"); return; }
     (async () => {
-      const [p, tpls] = await Promise.all([proposalsApi.get(id!), templatesApi.list()]);
-      setProposal(p);
-      setTemplates(tpls);
-      setForm({
-        clientName: p.clientName,
-        clientEmail: p.clientEmail,
-        clientCompany: p.clientCompany ?? "",
-        customMessage: p.customMessage ?? "",
-        discountPercentage: p.discountPercentage,
-        proposalType: p.proposalType ?? "project",
-        serviceTemplateId: p.serviceTemplateId,
-      });
-      setAiForm(p.aiContent ?? { introduction: "", scope: "", timeline: "", investment: "" });
-      setLoading(false);
+      try {
+        const [p, tpls] = await Promise.all([proposalsApi.get(id!), templatesApi.list()]);
+        setProposal(p);
+        setTemplates(tpls);
+        setForm({
+          clientName: p.clientName,
+          clientEmail: p.clientEmail,
+          clientCompany: p.clientCompany ?? "",
+          customMessage: p.customMessage ?? "",
+          discountPercentage: p.discountPercentage,
+          proposalType: p.proposalType ?? "project",
+          serviceTemplateId: p.serviceTemplateId,
+        });
+        setAiForm(p.aiContent ?? { introduction: "", scope: "", timeline: "", investment: "" });
+      } catch (err: unknown) {
+        console.error("Failed to load proposal:", err);
+        // Show not-found state (proposal stays null, loading goes false)
+      } finally {
+        setLoading(false);
+      }
     })();
   }, [id]);
 
