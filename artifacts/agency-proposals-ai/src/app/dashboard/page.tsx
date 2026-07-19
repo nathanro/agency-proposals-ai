@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { useLocation, Link } from "wouter";
-import { Plus, FileText, Clock, CheckCircle2, XCircle, Send, Trash2, Sparkles, LogOut, LayoutTemplate, TrendingUp, DollarSign } from "lucide-react";
+import {
+  Plus, FileText, Clock, CheckCircle2, XCircle, Send, Trash2,
+  Sparkles, LogOut, LayoutTemplate, TrendingUp, DollarSign, Eye, Edit2
+} from "lucide-react";
 import { getMe, logout, proposalsApi, isLoggedIn, type Proposal, type AuthUser } from "@/lib/api";
 
 const STATUS_LABELS: Record<string, string> = { draft: "Borrador", sent: "Enviada", accepted: "Aceptada", rejected: "Rechazada" };
@@ -11,6 +14,12 @@ const STATUS_ICON: Record<string, React.ReactNode> = {
   accepted: <CheckCircle2 className="w-3 h-3" />,
   rejected: <XCircle className="w-3 h-3" />,
 };
+const TYPE_BADGE: Record<string, string> = {
+  recurring: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+  project: "bg-violet-500/10 text-violet-400 border-violet-500/20",
+  consulting: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+};
+const TYPE_LABELS: Record<string, string> = { recurring: "Recurrente", project: "Proyecto", consulting: "Consultoría" };
 
 export default function DashboardPage() {
   const [, setLocation] = useLocation();
@@ -57,17 +66,14 @@ export default function DashboardPage() {
 
   const totals = {
     all: proposals.length,
-    draft: proposals.filter((p) => p.status === "draft").length,
     sent: proposals.filter((p) => p.status === "sent").length,
     accepted: proposals.filter((p) => p.status === "accepted").length,
-    value: proposals
-      .filter((p) => p.status === "accepted")
-      .reduce((sum, p) => sum + Number(p.finalPrice), 0),
+    value: proposals.filter((p) => p.status === "accepted").reduce((sum, p) => sum + Number(p.finalPrice), 0),
   };
 
   return (
     <div className="min-h-screen bg-[hsl(240,15%,6%)] text-white">
-      {/* Sidebar / nav */}
+      {/* Header */}
       <header className="border-b border-white/5 bg-[hsl(240,12%,8%)]">
         <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
@@ -124,6 +130,9 @@ export default function DashboardPage() {
             <div className="flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-violet-400" />
               <h2 className="font-semibold text-sm">Propuestas</h2>
+              {proposals.length > 0 && (
+                <span className="px-2 py-0.5 rounded-full bg-white/5 text-white/40 text-xs">{proposals.length}</span>
+              )}
             </div>
           </div>
 
@@ -134,48 +143,70 @@ export default function DashboardPage() {
               </div>
               <h3 className="font-semibold mb-2">Sin propuestas aún</h3>
               <p className="text-white/40 text-sm mb-6">Crea tu primera propuesta con IA</p>
-              <Link
-                href="/proposals/new"
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-sm font-medium transition-all"
-              >
+              <Link href="/proposals/new" className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-sm font-medium transition-all">
                 <Plus className="w-4 h-4" /> Nueva propuesta
               </Link>
             </div>
           ) : (
             <div className="divide-y divide-white/5">
               {proposals.map((proposal) => (
-                <div key={proposal.id} className="px-6 py-4 hover:bg-white/2 transition-colors flex items-center gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-3 mb-1">
-                      <p className="font-medium text-sm truncate">{proposal.clientName}</p>
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_BADGE[proposal.status] ?? "badge-draft"}`}>
-                        {STATUS_ICON[proposal.status]}
-                        {STATUS_LABELS[proposal.status] ?? proposal.status}
-                      </span>
+                <div key={proposal.id} className="px-6 py-4 hover:bg-white/[0.02] transition-colors">
+                  <div className="flex items-center gap-4">
+                    {/* Main info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <p className="font-medium text-sm truncate">{proposal.clientName}</p>
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_BADGE[proposal.status] ?? "badge-draft"}`}>
+                          {STATUS_ICON[proposal.status]}
+                          {STATUS_LABELS[proposal.status] ?? proposal.status}
+                        </span>
+                        {proposal.proposalType && (
+                          <span className={`px-2 py-0.5 rounded-full text-xs border ${TYPE_BADGE[proposal.proposalType] ?? TYPE_BADGE.project}`}>
+                            {TYPE_LABELS[proposal.proposalType] ?? proposal.proposalType}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-white/40 text-xs truncate">{proposal.templateName} · {proposal.clientEmail}</p>
                     </div>
-                    <p className="text-white/40 text-xs">{proposal.templateName} · {proposal.clientEmail}</p>
-                  </div>
-                  <div className="text-right flex-shrink-0">
-                    <p className="font-semibold text-sm">${Number(proposal.finalPrice).toLocaleString()}</p>
-                    <p className="text-white/30 text-xs">{proposal.currency}</p>
-                  </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <select
-                      value={proposal.status}
-                      onChange={(e) => handleStatusChange(proposal.id, e.target.value)}
-                      className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-xs text-white/70 focus:outline-none focus:border-violet-500 cursor-pointer"
-                    >
-                      <option value="draft">Borrador</option>
-                      <option value="sent">Enviada</option>
-                      <option value="accepted">Aceptada</option>
-                      <option value="rejected">Rechazada</option>
-                    </select>
-                    <button
-                      onClick={() => handleDelete(proposal.id)}
-                      className="p-1.5 rounded-lg text-white/20 hover:text-red-400 hover:bg-red-400/10 transition-all"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+
+                    {/* Price */}
+                    <div className="text-right flex-shrink-0 hidden sm:block">
+                      <p className="font-semibold text-sm">${Number(proposal.finalPrice).toLocaleString()}</p>
+                      <p className="text-white/30 text-xs">{proposal.currency}</p>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {/* View */}
+                      <Link href={`/proposals/${proposal.id}`}
+                        className="p-1.5 rounded-lg text-white/30 hover:text-violet-400 hover:bg-violet-400/10 transition-all"
+                        title="Ver propuesta">
+                        <Eye className="w-4 h-4" />
+                      </Link>
+                      {/* Edit */}
+                      <Link href={`/proposals/${proposal.id}`}
+                        className="p-1.5 rounded-lg text-white/30 hover:text-white hover:bg-white/5 transition-all"
+                        title="Editar propuesta">
+                        <Edit2 className="w-4 h-4" />
+                      </Link>
+                      {/* Status dropdown */}
+                      <select
+                        value={proposal.status}
+                        onChange={(e) => handleStatusChange(proposal.id, e.target.value)}
+                        className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-xs text-white/70 focus:outline-none focus:border-violet-500 cursor-pointer"
+                      >
+                        <option value="draft">Borrador</option>
+                        <option value="sent">Enviada</option>
+                        <option value="accepted">Aceptada</option>
+                        <option value="rejected">Rechazada</option>
+                      </select>
+                      {/* Delete */}
+                      <button onClick={() => handleDelete(proposal.id)}
+                        className="p-1.5 rounded-lg text-white/20 hover:text-red-400 hover:bg-red-400/10 transition-all"
+                        title="Eliminar">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}

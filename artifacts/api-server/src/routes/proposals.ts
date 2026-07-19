@@ -1,10 +1,83 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { proposalsTable, serviceTemplatesTable } from "@workspace/db";
+import { proposalsTable, serviceTemplatesTable, usersTable } from "@workspace/db";
 import { eq, and, desc } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "../middleware/auth.js";
+import { randomBytes } from "crypto";
 
 const router = Router();
+
+// ── PUBLIC routes (no auth) ────────────────────────────────────────────────────
+
+// GET /api/proposals/public/:token
+router.get("/proposals/public/:token", async (req, res) => {
+  try {
+    const rows = await db
+      .select({
+        id: proposalsTable.id,
+        clientName: proposalsTable.clientName,
+        clientEmail: proposalsTable.clientEmail,
+        clientCompany: proposalsTable.clientCompany,
+        status: proposalsTable.status,
+        finalPrice: proposalsTable.finalPrice,
+        currency: proposalsTable.currency,
+        discountPercentage: proposalsTable.discountPercentage,
+        customMessage: proposalsTable.customMessage,
+        aiContent: proposalsTable.aiContent,
+        proposalType: proposalsTable.proposalType,
+        expiresAt: proposalsTable.expiresAt,
+        createdAt: proposalsTable.createdAt,
+        serviceTemplateId: proposalsTable.serviceTemplateId,
+        templateName: serviceTemplatesTable.name,
+        templateDescription: serviceTemplatesTable.description,
+        templateDurationDays: serviceTemplatesTable.durationDays,
+        templateDeliverables: serviceTemplatesTable.deliverables,
+        templateCategory: serviceTemplatesTable.category,
+        agencyName: usersTable.agencyName,
+        agentName: usersTable.name,
+      })
+      .from(proposalsTable)
+      .leftJoin(serviceTemplatesTable, eq(proposalsTable.serviceTemplateId, serviceTemplatesTable.id))
+      .leftJoin(usersTable, eq(proposalsTable.userId, usersTable.id))
+      .where(eq(proposalsTable.publicToken, req.params.token))
+      .limit(1);
+
+    if (!rows[0]) {
+      res.status(404).json({ error: "Propuesta no encontrada" });
+      return;
+    }
+    res.json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/proposals/public/:token/respond — client accepts or rejects
+router.post("/proposals/public/:token/respond", async (req, res) => {
+  const { action } = req.body;
+  if (!action || !["accept", "reject"].includes(action)) {
+    res.status(400).json({ error: "action must be 'accept' or 'reject'" });
+    return;
+  }
+  try {
+    const status = action === "accept" ? "accepted" : "rejected";
+    const [updated] = await db
+      .update(proposalsTable)
+      .set({ status })
+      .where(eq(proposalsTable.publicToken, req.params.token))
+      .returning();
+    if (!updated) {
+      res.status(404).json({ error: "Propuesta no encontrada" });
+      return;
+    }
+    res.json({ ok: true, status });
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── PROTECTED routes ───────────────────────────────────────────────────────────
 router.use(requireAuth);
 
 // GET /api/proposals
@@ -21,10 +94,14 @@ router.get("/proposals", async (req: AuthRequest, res) => {
         currency: proposalsTable.currency,
         discountPercentage: proposalsTable.discountPercentage,
         customMessage: proposalsTable.customMessage,
+        aiContent: proposalsTable.aiContent,
+        proposalType: proposalsTable.proposalType,
+        publicToken: proposalsTable.publicToken,
         expiresAt: proposalsTable.expiresAt,
         createdAt: proposalsTable.createdAt,
         serviceTemplateId: proposalsTable.serviceTemplateId,
         templateName: serviceTemplatesTable.name,
+        templateCategory: serviceTemplatesTable.category,
       })
       .from(proposalsTable)
       .leftJoin(serviceTemplatesTable, eq(proposalsTable.serviceTemplateId, serviceTemplatesTable.id))
@@ -37,9 +114,53 @@ router.get("/proposals", async (req: AuthRequest, res) => {
   }
 });
 
+// GET /api/proposals/:id
+router.get("/proposals/:id", async (req: AuthRequest, res) => {
+  try {
+    const rows = await db
+      .select({
+        id: proposalsTable.id,
+        clientName: proposalsTable.clientName,
+        clientEmail: proposalsTable.clientEmail,
+        clientCompany: proposalsTable.clientCompany,
+        status: proposalsTable.status,
+        finalPrice: proposalsTable.finalPrice,
+        currency: proposalsTable.currency,
+        discountPercentage: proposalsTable.discountPercentage,
+        customMessage: proposalsTable.customMessage,
+        aiContent: proposalsTable.aiContent,
+        proposalType: proposalsTable.proposalType,
+        publicToken: proposalsTable.publicToken,
+        expiresAt: proposalsTable.expiresAt,
+        createdAt: proposalsTable.createdAt,
+        serviceTemplateId: proposalsTable.serviceTemplateId,
+        templateName: serviceTemplatesTable.name,
+        templateDescription: serviceTemplatesTable.description,
+        templatePrice: serviceTemplatesTable.price,
+        templateDurationDays: serviceTemplatesTable.durationDays,
+        templateDeliverables: serviceTemplatesTable.deliverables,
+        templateCurrency: serviceTemplatesTable.currency,
+        templateCategory: serviceTemplatesTable.category,
+      })
+      .from(proposalsTable)
+      .leftJoin(serviceTemplatesTable, eq(proposalsTable.serviceTemplateId, serviceTemplatesTable.id))
+      .where(and(eq(proposalsTable.id, req.params.id), eq(proposalsTable.userId, req.userId!)))
+      .limit(1);
+
+    if (!rows[0]) {
+      res.status(404).json({ error: "Proposal not found" });
+      return;
+    }
+    res.json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // POST /api/proposals
 router.post("/proposals", async (req: AuthRequest, res) => {
-  const { serviceTemplateId, clientName, clientEmail, clientCompany, customMessage, discountPercentage } = req.body;
+  const { serviceTemplateId, clientName, clientEmail, clientCompany, customMessage, discountPercentage, aiContent, proposalType } = req.body;
   if (!serviceTemplateId || !clientName || !clientEmail) {
     res.status(400).json({ error: "serviceTemplateId, clientName and clientEmail are required" });
     return;
@@ -54,11 +175,12 @@ router.post("/proposals", async (req: AuthRequest, res) => {
 
     const discount = Number(discountPercentage) || 0;
     const finalPrice = (Number(template.price) * (1 - discount / 100)).toFixed(2);
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
 
     const [proposal] = await db.insert(proposalsTable).values({
       userId: req.userId!,
       serviceTemplateId,
+      proposalType: proposalType || template.category || "project",
       clientName,
       clientEmail,
       clientCompany: clientCompany || null,
@@ -67,6 +189,7 @@ router.post("/proposals", async (req: AuthRequest, res) => {
       discountPercentage: discount,
       finalPrice,
       currency: template.currency,
+      aiContent: aiContent || null,
       expiresAt,
     }).returning();
     res.status(201).json(proposal);
@@ -76,7 +199,54 @@ router.post("/proposals", async (req: AuthRequest, res) => {
   }
 });
 
-// PATCH /api/proposals/:id
+// PUT /api/proposals/:id — full update
+router.put("/proposals/:id", async (req: AuthRequest, res) => {
+  const { clientName, clientEmail, clientCompany, customMessage, discountPercentage, aiContent, proposalType, serviceTemplateId } = req.body;
+  try {
+    // Recalculate price if discount or template changed
+    let finalPrice: string | undefined;
+    const templateIdToUse = serviceTemplateId;
+    if (templateIdToUse || discountPercentage !== undefined) {
+      const [current] = await db
+        .select({ serviceTemplateId: proposalsTable.serviceTemplateId, discountPercentage: proposalsTable.discountPercentage })
+        .from(proposalsTable)
+        .where(and(eq(proposalsTable.id, req.params.id), eq(proposalsTable.userId, req.userId!)))
+        .limit(1);
+      if (current) {
+        const tid = templateIdToUse || current.serviceTemplateId;
+        const [template] = await db.select().from(serviceTemplatesTable).where(eq(serviceTemplatesTable.id, tid)).limit(1);
+        if (template) {
+          const disc = discountPercentage !== undefined ? Number(discountPercentage) : current.discountPercentage;
+          finalPrice = (Number(template.price) * (1 - disc / 100)).toFixed(2);
+        }
+      }
+    }
+
+    const updateData: Record<string, unknown> = {};
+    if (clientName !== undefined) updateData.clientName = clientName;
+    if (clientEmail !== undefined) updateData.clientEmail = clientEmail;
+    if (clientCompany !== undefined) updateData.clientCompany = clientCompany || null;
+    if (customMessage !== undefined) updateData.customMessage = customMessage || null;
+    if (discountPercentage !== undefined) updateData.discountPercentage = Number(discountPercentage);
+    if (aiContent !== undefined) updateData.aiContent = aiContent;
+    if (proposalType !== undefined) updateData.proposalType = proposalType;
+    if (serviceTemplateId !== undefined) updateData.serviceTemplateId = serviceTemplateId;
+    if (finalPrice !== undefined) updateData.finalPrice = finalPrice;
+
+    const [updated] = await db
+      .update(proposalsTable)
+      .set(updateData)
+      .where(and(eq(proposalsTable.id, req.params.id), eq(proposalsTable.userId, req.userId!)))
+      .returning();
+    if (!updated) { res.status(404).json({ error: "Proposal not found" }); return; }
+    res.json(updated);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// PATCH /api/proposals/:id — status only (backward compat)
 router.patch("/proposals/:id", async (req: AuthRequest, res) => {
   const { status } = req.body;
   try {
@@ -88,6 +258,23 @@ router.patch("/proposals/:id", async (req: AuthRequest, res) => {
     if (!updated) { res.status(404).json({ error: "Proposal not found" }); return; }
     res.json(updated);
   } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/proposals/:id/send — generate public token, set status to "sent"
+router.post("/proposals/:id/send", async (req: AuthRequest, res) => {
+  try {
+    const token = randomBytes(24).toString("hex");
+    const [updated] = await db
+      .update(proposalsTable)
+      .set({ status: "sent", publicToken: token })
+      .where(and(eq(proposalsTable.id, req.params.id), eq(proposalsTable.userId, req.userId!)))
+      .returning();
+    if (!updated) { res.status(404).json({ error: "Proposal not found" }); return; }
+    res.json({ ok: true, publicToken: token, proposal: updated });
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Internal server error" });
   }
 });

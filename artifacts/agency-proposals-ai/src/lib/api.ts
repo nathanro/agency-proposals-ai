@@ -1,4 +1,4 @@
-// API client — replaces Supabase calls. All requests go through Vite proxy → API server.
+// API client — all requests go through Vite proxy → API server on port 8080.
 
 const BASE = "/api";
 
@@ -75,6 +75,7 @@ export interface ServiceTemplate {
   currency: string;
   durationDays: number;
   deliverables: string[];
+  category: string;
   isActive: boolean;
   createdAt: string;
 }
@@ -90,6 +91,13 @@ export const templatesApi = {
 
 // ── Proposals ─────────────────────────────────────────────────────────────────
 
+export interface AiContent {
+  introduction: string;
+  scope: string;
+  timeline: string;
+  investment: string;
+}
+
 export interface Proposal {
   id: string;
   clientName: string;
@@ -100,14 +108,32 @@ export interface Proposal {
   currency: string;
   discountPercentage: number;
   customMessage?: string | null;
+  aiContent?: AiContent | null;
+  proposalType: string;
+  publicToken?: string | null;
   expiresAt?: string | null;
   createdAt: string;
   serviceTemplateId: string;
   templateName?: string | null;
+  // detail-only fields
+  templateDescription?: string | null;
+  templatePrice?: string | null;
+  templateDurationDays?: number | null;
+  templateDeliverables?: string[] | null;
+  templateCurrency?: string | null;
+  templateCategory?: string | null;
+}
+
+export interface PublicProposal extends Proposal {
+  agencyName?: string | null;
+  agentName?: string | null;
 }
 
 export const proposalsApi = {
   list: () => request<Proposal[]>("/proposals"),
+
+  get: (id: string) => request<Proposal>(`/proposals/${id}`),
+
   create: (data: {
     serviceTemplateId: string;
     clientName: string;
@@ -115,10 +141,48 @@ export const proposalsApi = {
     clientCompany?: string;
     customMessage?: string;
     discountPercentage?: number;
+    aiContent?: AiContent;
+    proposalType?: string;
   }) => request<Proposal>("/proposals", { method: "POST", body: JSON.stringify(data) }),
+
+  update: (id: string, data: {
+    clientName?: string;
+    clientEmail?: string;
+    clientCompany?: string;
+    customMessage?: string;
+    discountPercentage?: number;
+    aiContent?: AiContent;
+    proposalType?: string;
+    serviceTemplateId?: string;
+  }) => request<Proposal>(`/proposals/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+
   updateStatus: (id: string, status: string) =>
     request<Proposal>(`/proposals/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
+
+  send: (id: string) =>
+    request<{ ok: boolean; publicToken: string; proposal: Proposal }>(`/proposals/${id}/send`, {
+      method: "POST",
+    }),
+
   delete: (id: string) => request<{ ok: boolean }>(`/proposals/${id}`, { method: "DELETE" }),
+
+  getPublic: (token: string) =>
+    fetch(`${BASE}/proposals/public/${token}`).then(async (r) => {
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error ?? "Not found");
+      return d as PublicProposal;
+    }),
+
+  respond: (token: string, action: "accept" | "reject") =>
+    fetch(`${BASE}/proposals/public/${token}/respond`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    }).then(async (r) => {
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error ?? "Error");
+      return d as { ok: boolean; status: string };
+    }),
 };
 
 // ── AI ────────────────────────────────────────────────────────────────────────

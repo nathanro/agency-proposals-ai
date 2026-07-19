@@ -12,6 +12,7 @@ export const serviceTemplatesTable = pgTable("service_templates", {
   currency: text("currency").notNull().default("USD"),
   durationDays: integer("duration_days").notNull().default(30),
   deliverables: json("deliverables").$type<string[]>().notNull().default([]),
+  category: text("category").notNull().default("project"), // "recurring" | "project" | "consulting"
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

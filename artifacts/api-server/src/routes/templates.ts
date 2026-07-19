@@ -23,7 +23,7 @@ router.get("/templates", async (req: AuthRequest, res) => {
 
 // POST /api/templates
 router.post("/templates", async (req: AuthRequest, res) => {
-  const { name, description, price, currency, durationDays, deliverables } = req.body;
+  const { name, description, price, currency, durationDays, deliverables, category } = req.body;
   if (!name || !description || price == null) {
     res.status(400).json({ error: "name, description and price are required" });
     return;
@@ -37,6 +37,7 @@ router.post("/templates", async (req: AuthRequest, res) => {
       currency: currency || "USD",
       durationDays: Number(durationDays) || 30,
       deliverables: deliverables || [],
+      category: category || "project",
       isActive: true,
     }).returning();
     res.status(201).json(tmpl);
@@ -48,7 +49,7 @@ router.post("/templates", async (req: AuthRequest, res) => {
 
 // PATCH /api/templates/:id
 router.patch("/templates/:id", async (req: AuthRequest, res) => {
-  const { name, description, price, currency, durationDays, deliverables, isActive } = req.body;
+  const { name, description, price, currency, durationDays, deliverables, isActive, category } = req.body;
   try {
     const updates: Record<string, unknown> = {};
     if (name !== undefined) updates.name = name;
@@ -58,6 +59,7 @@ router.patch("/templates/:id", async (req: AuthRequest, res) => {
     if (durationDays !== undefined) updates.durationDays = Number(durationDays);
     if (deliverables !== undefined) updates.deliverables = deliverables;
     if (isActive !== undefined) updates.isActive = isActive;
+    if (category !== undefined) updates.category = category;
 
     const [updated] = await db
       .update(serviceTemplatesTable)

@@ -7,7 +7,9 @@ import HomePage from '@/app/page';
 import LoginPage from '@/app/auth/login/page';
 import DashboardPage from '@/app/dashboard/page';
 import NewProposalPage from '@/app/proposals/new/page';
+import ProposalDetailPage from '@/app/proposals/detail/page';
 import TemplatesPage from '@/app/templates/page';
+import PublicProposalPage from '@/app/p/page';
 
 const queryClient = new QueryClient();
 
@@ -17,8 +19,11 @@ function Router() {
       <Route path="/" component={HomePage} />
       <Route path="/auth/login" component={LoginPage} />
       <Route path="/dashboard" component={DashboardPage} />
+      {/* /proposals/new must be before /proposals/:id */}
       <Route path="/proposals/new" component={NewProposalPage} />
+      <Route path="/proposals/:id" component={ProposalDetailPage} />
       <Route path="/templates" component={TemplatesPage} />
+      <Route path="/p/:token" component={PublicProposalPage} />
       <Route component={NotFound} />
     </Switch>
   );
