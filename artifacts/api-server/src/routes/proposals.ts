@@ -222,6 +222,7 @@ router.post("/proposals", async (req: AuthRequest, res) => {
     const discount = Number(discountPercentage) || 0;
     const finalPrice = (Number(template.price) * (1 - discount / 100)).toFixed(2);
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const publicToken = randomBytes(24).toString("hex");
 
     const [proposal] = await db.insert(proposalsTable).values({
       userId: req.userId!,
@@ -237,6 +238,7 @@ router.post("/proposals", async (req: AuthRequest, res) => {
       finalPrice,
       currency: template.currency,
       aiContent: aiContent || null,
+      publicToken,
       expiresAt,
     }).returning();
     res.status(201).json(proposal);

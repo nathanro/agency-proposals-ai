@@ -23,6 +23,8 @@ export default function NewProposalPage() {
   const [generating, setGenerating] = useState(false);
   const [generated, setGenerated] = useState<ProposalContent | null>(null);
   const [limitError, setLimitError] = useState<{ message: string; current: number; limit: number } | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [form, setForm] = useState({
     clientName: "", clientEmail: "", clientCompany: "", customMessage: "", discountPercentage: 0,
@@ -32,7 +34,20 @@ export default function NewProposalPage() {
 
   useEffect(() => {
     if (!isLoggedIn()) { setLocation("/auth/login"); return; }
-    templatesApi.list().then((t) => { setTemplates(t.filter((x) => x.isActive)); setLoading(false); });
+    templatesApi.list()
+      .then((t) => { setTemplates(t.filter((x) => x.isActive)); setLoading(false); })
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        // Expired/invalid token — force re-login
+        if (msg === "Invalid token" || msg === "Unauthorized") {
+          localStorage.removeItem("token");
+          localStorage.removeItem("org");
+          setLocation("/auth/login");
+          return;
+        }
+        setLoadError("No se pudieron cargar los servicios. Recarga la página.");
+        setLoading(false);
+      });
   }, []);
 
   // Group templates by category
@@ -49,6 +64,7 @@ export default function NewProposalPage() {
   const handleGenerate = async () => {
     if (!selected || !form.clientName) return;
     setGenerating(true);
+    setCreateError(null);
     try {
       const content = await aiApi.generateProposal({
         serviceName: selected.name,
@@ -57,8 +73,9 @@ export default function NewProposalPage() {
         serviceDescription: selected.description,
       });
       setGenerated(content);
-    } catch {
-      alert("Error generando contenido con IA");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setCreateError(msg || "Error generando contenido con IA");
     } finally {
       setGenerating(false);
     }
@@ -66,9 +83,10 @@ export default function NewProposalPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selected) { alert("Selecciona un servicio"); return; }
+    if (!selected) return;
     setSubmitting(true);
     setLimitError(null);
+    setCreateError(null);
     try {
       const newProposal = await proposalsApi.create({
         serviceTemplateId: selected.id,
@@ -80,17 +98,28 @@ export default function NewProposalPage() {
         aiContent: generated ?? undefined,
         proposalType: selected.category ?? "project",
       });
+      if (!newProposal?.id) {
+        setCreateError("No se pudo crear la propuesta. Intenta nuevamente.");
+        return;
+      }
       // Go to detail page so user can send immediately
       setLocation(`/proposals/${newProposal.id}`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
+      // Expired/invalid token — force re-login
+      if (msg === "Invalid token" || msg === "Unauthorized") {
+        localStorage.removeItem("token");
+        localStorage.removeItem("org");
+        setLocation("/auth/login");
+        return;
+      }
       // Detect plan limit error by the known message pattern from the API
       const limitMatch = msg.match(/Alcanzaste tu límite de (\d+) propuestas/);
       if (limitMatch) {
         const limit = Number(limitMatch[1]);
         setLimitError({ message: msg, current: limit, limit });
       } else {
-        alert(msg || "Error al crear propuesta");
+        setCreateError(msg || "Error al crear propuesta. Intenta nuevamente.");
       }
     } finally {
       setSubmitting(false);
@@ -100,6 +129,21 @@ export default function NewProposalPage() {
   if (loading) return (
     <div className="min-h-screen bg-[hsl(240,15%,6%)] flex items-center justify-center">
       <div className="w-8 h-8 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+    </div>
+  );
+
+  if (loadError) return (
+    <div className="min-h-screen bg-[hsl(240,15%,6%)] flex items-center justify-center px-6">
+      <div className="text-center max-w-sm">
+        <div className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-4">
+          <AlertTriangle className="w-6 h-6 text-red-400" />
+        </div>
+        <p className="text-white/70 text-sm mb-4">{loadError}</p>
+        <button onClick={() => window.location.reload()}
+          className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-sm font-medium transition-all">
+          Recargar
+        </button>
+      </div>
     </div>
   );
 
@@ -116,6 +160,20 @@ export default function NewProposalPage() {
       </header>
 
       <main className="max-w-5xl mx-auto px-6 py-8">
+        {/* Generic create/AI error banner */}
+        {createError && (
+          <div className="mb-6 flex items-start gap-3 rounded-2xl border border-red-500/30 bg-red-500/10 px-5 py-4">
+            <AlertTriangle className="w-5 h-5 text-red-400 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-red-300">{createError}</p>
+            </div>
+            <button onClick={() => setCreateError(null)}
+              className="shrink-0 text-red-400/60 hover:text-red-300 text-lg leading-none transition-colors">
+              ×
+            </button>
+          </div>
+        )}
+
         {/* Plan limit error banner */}
         {limitError && (
           <div className="mb-6 flex items-start gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-5 py-4">
