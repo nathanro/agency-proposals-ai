@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { proposalsTable, serviceTemplatesTable, usersTable, organizationsTable } from "@workspace/db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, count } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "../middleware/auth.js";
 import { randomBytes } from "crypto";
 
@@ -184,6 +184,33 @@ router.post("/proposals", async (req: AuthRequest, res) => {
     return;
   }
   try {
+    // ── Plan limit check ────────────────────────────────────────────────────────
+    const [org] = await db
+      .select({ plan: organizationsTable.plan, giftedAccess: organizationsTable.giftedAccess, proposalLimit: organizationsTable.proposalLimit })
+      .from(organizationsTable)
+      .where(eq(organizationsTable.id, req.organizationId!))
+      .limit(1);
+
+    const isExempt = org?.giftedAccess || org?.plan === "agency";
+    if (!isExempt) {
+      const [usage] = await db
+        .select({ total: count() })
+        .from(proposalsTable)
+        .where(eq(proposalsTable.organizationId, req.organizationId!));
+      const current = Number(usage?.total ?? 0);
+      const limit = org?.proposalLimit ?? 10;
+      if (current >= limit) {
+        res.status(403).json({
+          error: `Alcanzaste tu límite de ${limit} propuestas. Actualiza tu plan.`,
+          code: "PROPOSAL_LIMIT_REACHED",
+          current,
+          limit,
+        });
+        return;
+      }
+    }
+    // ────────────────────────────────────────────────────────────────────────────
+
     // Template must belong to same org
     const [template] = await db
       .select()

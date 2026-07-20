@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation, Link } from "wouter";
 import { ArrowLeft, Save, Building2, Palette, Image, Sparkles, Check, Crown } from "lucide-react";
 import { isLoggedIn, orgApi, type OrgBranding } from "@/lib/api";
+import { TrendingUp } from "lucide-react";
 import { useOrg } from "@/contexts/OrgContext";
 
 const PRESET_COLORS = [
@@ -28,9 +29,11 @@ export default function SettingsPage() {
   const [form, setForm] = useState({ name: "", logoUrl: "", primaryColor: "#7c3aed" });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [usageCount, setUsageCount] = useState<number | null>(null);
 
   useEffect(() => {
     if (!isLoggedIn()) { setLocation("/auth/login"); return; }
+    orgApi.usage().then((u) => setUsageCount(u.proposals)).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -100,15 +103,62 @@ export default function SettingsPage() {
             </div>
           </div>
           {org && (
-            <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+            <div className="mt-4 space-y-3">
+              {/* Proposal usage */}
               <div className="p-3 rounded-xl bg-white/3 border border-white/5">
-                <p className="text-white/40 text-xs mb-1">Propuestas máx.</p>
-                <p className="font-semibold">{org.proposalLimit}</p>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-white/40 text-xs">Propuestas usadas</p>
+                  <p className="text-xs font-semibold">
+                    {usageCount !== null ? usageCount : "—"} / {org.proposalLimit}
+                  </p>
+                </div>
+                {usageCount !== null && (
+                  <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        usageCount >= org.proposalLimit
+                          ? "bg-red-500"
+                          : usageCount / org.proposalLimit >= 0.8
+                          ? "bg-amber-500"
+                          : "bg-violet-500"
+                      }`}
+                      style={{ width: `${Math.min(100, (usageCount / org.proposalLimit) * 100)}%` }}
+                    />
+                  </div>
+                )}
               </div>
-              <div className="p-3 rounded-xl bg-white/3 border border-white/5">
+              <div className="p-3 rounded-xl bg-white/3 border border-white/5 text-sm">
                 <p className="text-white/40 text-xs mb-1">Miembros máx.</p>
                 <p className="font-semibold">{org.memberLimit}</p>
               </div>
+            </div>
+          )}
+          {/* Upgrade CTA — shown when at/near limit and not gifted or agency */}
+          {org && !org.giftedAccess && org.plan !== "agency" && usageCount !== null && usageCount >= org.proposalLimit * 0.8 && (
+            <div className={`mt-4 flex items-center gap-3 p-3 rounded-xl border ${
+              usageCount >= org.proposalLimit
+                ? "border-red-500/30 bg-red-500/10"
+                : "border-amber-500/30 bg-amber-500/10"
+            }`}>
+              <TrendingUp className={`w-4 h-4 shrink-0 ${usageCount >= org.proposalLimit ? "text-red-400" : "text-amber-400"}`} />
+              <div className="flex-1 min-w-0">
+                <p className={`text-xs font-semibold ${usageCount >= org.proposalLimit ? "text-red-300" : "text-amber-300"}`}>
+                  {usageCount >= org.proposalLimit
+                    ? "Límite alcanzado — no puedes crear más propuestas"
+                    : "Estás cerca de tu límite de propuestas"}
+                </p>
+                <p className="text-xs text-white/40 mt-0.5">Actualiza tu plan para seguir creciendo.</p>
+              </div>
+              <a
+                href="mailto:hola@tuagencia.com?subject=Quiero%20actualizar%20mi%20plan"
+                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  usageCount >= org.proposalLimit
+                    ? "bg-red-500 hover:bg-red-400 text-white"
+                    : "bg-amber-500 hover:bg-amber-400 text-black"
+                }`}
+              >
+                Actualizar
+              </a>
             </div>
           )}
         </section>

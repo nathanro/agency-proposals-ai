@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation, Link } from "wouter";
-import { ArrowLeft, Send, Sparkles, User, Mail, Building2, ChevronRight, Wand2 } from "lucide-react";
+import { ArrowLeft, Send, Sparkles, User, Mail, Building2, ChevronRight, Wand2, AlertTriangle } from "lucide-react";
 import { isLoggedIn, templatesApi, proposalsApi, aiApi, type ServiceTemplate, type ProposalContent } from "@/lib/api";
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -22,6 +22,7 @@ export default function NewProposalPage() {
   const [submitting, setSubmitting] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [generated, setGenerated] = useState<ProposalContent | null>(null);
+  const [limitError, setLimitError] = useState<{ message: string; current: number; limit: number } | null>(null);
 
   const [form, setForm] = useState({
     clientName: "", clientEmail: "", clientCompany: "", customMessage: "", discountPercentage: 0,
@@ -67,6 +68,7 @@ export default function NewProposalPage() {
     e.preventDefault();
     if (!selected) { alert("Selecciona un servicio"); return; }
     setSubmitting(true);
+    setLimitError(null);
     try {
       const newProposal = await proposalsApi.create({
         serviceTemplateId: selected.id,
@@ -81,7 +83,15 @@ export default function NewProposalPage() {
       // Go to detail page so user can send immediately
       setLocation(`/proposals/${newProposal.id}`);
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Error al crear propuesta");
+      const msg = err instanceof Error ? err.message : String(err);
+      // Detect plan limit error by the known message pattern from the API
+      const limitMatch = msg.match(/Alcanzaste tu límite de (\d+) propuestas/);
+      if (limitMatch) {
+        const limit = Number(limitMatch[1]);
+        setLimitError({ message: msg, current: limit, limit });
+      } else {
+        alert(msg || "Error al crear propuesta");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -106,6 +116,23 @@ export default function NewProposalPage() {
       </header>
 
       <main className="max-w-5xl mx-auto px-6 py-8">
+        {/* Plan limit error banner */}
+        {limitError && (
+          <div className="mb-6 flex items-start gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-5 py-4">
+            <AlertTriangle className="w-5 h-5 text-amber-400 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-amber-300">{limitError.message}</p>
+              <p className="text-xs text-amber-400/70 mt-0.5">
+                Tienes {limitError.limit} de {limitError.limit} propuestas usadas.
+              </p>
+            </div>
+            <Link href="/settings"
+              className="shrink-0 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-black text-xs font-semibold transition-all">
+              Actualizar plan
+            </Link>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="grid lg:grid-cols-[1fr_380px] gap-6">
           {/* Left column */}
           <div className="space-y-6">
