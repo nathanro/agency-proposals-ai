@@ -14,6 +14,8 @@ export const serviceTemplatesTable = pgTable("service_templates", {
   deliverables: json("deliverables").$type<string[]>().notNull().default([]),
   category: text("category").notNull().default("project"),
   isActive: boolean("is_active").notNull().default(true),
+  // Tracks which Publiexpert catalog service this template was imported from (soft reference)
+  sourceServiceId: uuid("source_service_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

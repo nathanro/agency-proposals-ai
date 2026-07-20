@@ -100,6 +100,7 @@ export interface ServiceTemplate {
   id: string;
   userId: string;
   organizationId?: string | null;
+  sourceServiceId?: string | null;
   name: string;
   description: string;
   price: string;
@@ -231,6 +232,43 @@ export const adminApi = {
     memberLimit?: number;
     name?: string;
   }) => request<OrgBranding>(`/admin/orgs/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+};
+
+// ── Catalog (Publiexpert) ─────────────────────────────────────────────────────
+
+export interface CatalogService {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  basePrice: string;
+  suggestedPrice?: string | null;
+  currency: string;
+  durationDays: number;
+  deliverables: string[];
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const catalogApi = {
+  list: () => request<CatalogService[]>("/catalog"),
+  import: (id: string, salePrice: number) =>
+    request<ServiceTemplate>(`/catalog/${id}/import`, { method: "POST", body: JSON.stringify({ salePrice }) }),
+  // Superadmin routes
+  adminList: () => request<CatalogService[]>("/catalog/admin"),
+  adminCreate: (data: {
+    name: string; description: string; category: string;
+    basePrice: number; suggestedPrice?: number | null;
+    currency: string; durationDays: number; deliverables: string[];
+  }) => request<CatalogService>("/catalog/admin", { method: "POST", body: JSON.stringify(data) }),
+  adminUpdate: (id: string, data: Partial<{
+    name: string; description: string; category: string;
+    basePrice: number; suggestedPrice: number | null;
+    currency: string; durationDays: number; deliverables: string[];
+  }>) => request<CatalogService>(`/catalog/admin/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  adminToggle: (id: string, isActive: boolean) =>
+    request<CatalogService>(`/catalog/admin/${id}`, { method: "PATCH", body: JSON.stringify({ isActive }) }),
 };
 
 // ── AI ────────────────────────────────────────────────────────────────────────
